@@ -441,14 +441,27 @@ function renderTexture(ctId) {
       },
     });
 
+  // An answer octy rates ✗ for every spec still in the pool contradicts the earlier funnel steps
+  // (e.g. a magic school after picking Physical only), so it can't be picked.
+  const pool = basePool();
+  const rulesOutPool = (q, opt) => {
+    const ratings = octyRatings(q, opt);
+    return pool.every((s) => ratings[s.id] === "X");
+  };
+
   const question = (it, i) => {
     const options = TEXTURE_OPTIONS[it.q];
     if (!options) return el("label", { class: "q" }, el("span", {}, it.q), textarea(i));
     return el("div", { class: "q" }, el("span", {}, it.q),
-      el("div", { class: "chips" }, Object.keys(options).map((opt) =>
-        el("button", {
-          class: `chip${t.choices[i].includes(opt) ? " on" : ""}`,
-          "aria-pressed": String(t.choices[i].includes(opt)),
+      el("div", { class: "chips" }, Object.keys(options).map((opt) => {
+        const on = t.choices[i].includes(opt);
+        const contradicts = rulesOutPool(it.q, opt);
+        return el("button", {
+          class: `chip${on ? " on" : ""}`,
+          "aria-pressed": String(on),
+          // A chosen chip stays clickable so it can be removed if the pool changed after it was picked.
+          disabled: contradicts && !on,
+          title: contradicts ? "octy rates every spec left in your pool ✗ for this answer" : null,
           onclick: (e) => {
             const chosen = t.choices[i];
             const at = chosen.indexOf(opt);
@@ -456,9 +469,11 @@ function renderTexture(ctId) {
             else chosen.splice(at, 1);
             e.currentTarget.classList.toggle("on", at === -1);
             e.currentTarget.setAttribute("aria-pressed", String(at === -1));
+            e.currentTarget.disabled = contradicts && at !== -1;
             markStale();
           },
-        }, opt))),
+        }, opt);
+      })),
       textarea(i, "Add detail (optional)"),
     );
   };
