@@ -11,6 +11,13 @@
 <body>
   <nav id="nav"></nav>
   <main id="app"></main>
-  <div id="turnstile"></div>
+  <div id="turnstile" class="human-check" role="dialog" aria-modal="true" aria-labelledby="human-check-title" hidden>
+    <div class="human-check-box">
+      <h2 id="human-check-title">Confirm you're human</h2>
+      <p>The trainer only answers real adventurers. Complete the check to continue.</p>
+      <div class="human-check-slot"></div>
+      <button type="button" class="human-check-cancel">Cancel</button>
+    </div>
+  </div>
 </body>
 </html>

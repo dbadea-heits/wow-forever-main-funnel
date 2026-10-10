@@ -161,12 +161,33 @@ textarea:focus, input:focus { outline: 1px solid var(--gold-soft); }
 .dot.evaluated { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
 .dot.stale { background: var(--warn); box-shadow: 0 0 6px var(--warn); }
 .dot.skipped { background: #777; }
+.nav-legend {
+  display: grid; gap: .3rem;
+  margin-top: 1rem; padding-top: .7rem;
+  border-top: 1px solid rgba(138, 106, 53, .4);
+  font-size: .74rem; color: var(--muted);
+}
+.nav-legend div { display: flex; align-items: center; gap: .45rem; }
+.nav-reset { margin-top: auto; font-size: .78rem; padding: .3rem .6rem; color: var(--muted); }
 
 /* ---------- main column ---------- */
 
 #app { padding: 2rem 2.6rem 3rem; max-width: 1160px; width: 100%; }
-/* Turnstile shows here only when a visitor must interact with the challenge. */
-#turnstile { position: fixed; right: 1rem; bottom: 1rem; z-index: 20; }
+/* Human check: opens over the page only when Cloudflare needs the visitor to interact. */
+.human-check { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 1rem; background: rgba(0, 0, 0, .7); }
+.human-check[hidden] { display: none; }
+.human-check-box {
+  display: grid; justify-items: center; gap: .8rem;
+  max-width: 360px; padding: 1.4rem;
+  text-align: center;
+  background: var(--panel);
+  border: 2px solid var(--bronze);
+  border-radius: 8px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, .8);
+}
+.human-check-box h2 { margin: 0; color: var(--gold); }
+.human-check-box p { margin: 0; color: var(--muted); font-size: .9rem; }
+.human-check-slot { min-height: 65px; }
 
 .panel > h2:first-child { margin-top: 0; }
 .panel {
@@ -282,11 +303,13 @@ textarea:focus, input:focus { outline: 1px solid var(--gold-soft); }
   box-shadow: none;
   padding: .35rem .5rem;
 }
-.ct-tile span:nth-child(2) { flex: 1; }
+/* min-width 0 lets long labels like "Farming/professions" wrap (at the <wbr> after "/") inside the tile instead of overflowing it. */
+.ct-tile span:nth-child(2) { flex: 1; min-width: 0; overflow-wrap: break-word; hyphens: auto; }
 .ct-tile .add { color: var(--gold); font-size: 1.1rem; }
 .rank-row { display: flex; align-items: center; gap: .5rem; padding: .4rem 0; border-bottom: 1px solid rgba(138, 106, 53, .25); }
 .rank { font-family: var(--heading); font-weight: 700; color: var(--gold); width: 1.3rem; text-align: center; }
 .weight { color: var(--muted); font-size: .85rem; display: flex; align-items: center; gap: .2rem; }
+.weight.custom input { border-color: var(--gold-soft); }
 
 /* ---------- texture step ---------- */
 
@@ -330,7 +353,23 @@ textarea:focus, input:focus { outline: 1px solid var(--gold-soft); }
 }
 .parchment .chip:hover { background: rgba(255, 252, 240, .85); }
 .parchment .chip.on { color: #fff3c4; background: #7a4e17; border-color: #5c3a10; }
-.actions { display: flex; gap: .6rem; margin: 1rem 0; }
+/* Stays in reach at the bottom of the screen while scrolling a long question list. */
+.actions {
+  position: sticky; bottom: 0; z-index: 4;
+  display: flex; gap: .6rem;
+  margin: 1rem -.6rem; padding: .7rem .6rem;
+  background: linear-gradient(180deg, rgba(23, 14, 9, .85), rgba(23, 14, 9, .98));
+  border-top: 1px solid rgba(138, 106, 53, .4);
+}
+.add-detail {
+  justify-self: start;
+  font: 600 .8rem "Open Sans", system-ui, sans-serif;
+  letter-spacing: 0;
+  padding: 0; margin-top: -.1rem;
+  color: #7a4e17; background: none; border: 0; box-shadow: none; text-shadow: none;
+  text-decoration: underline;
+}
+.add-detail:hover:not(:disabled) { color: #3b2610; filter: none; }
 
 .badge {
   display: inline-block;
@@ -411,7 +450,13 @@ textarea:focus, input:focus { outline: 1px solid var(--gold-soft); }
 .results tr.zero { opacity: .38; }
 .results .ok { color: var(--ok); font-weight: 700; }
 .results .bad { color: var(--bad); font-weight: 700; }
+.recheck { color: var(--warn); }
 .spec-cell { display: inline-flex; align-items: center; gap: .5rem; }
+.share { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; margin-top: .5rem; }
+.share-url { flex: 1 1 260px; font-size: .8rem; }
+.step-links { display: inline-flex; flex-wrap: wrap; gap: .4rem; vertical-align: middle; }
+.empty-results { text-align: center; }
+.empty-results .step-links { justify-content: center; }
 
 /* ---------- tooltip ---------- */
 
@@ -461,6 +506,8 @@ textarea:focus, input:focus { outline: 1px solid var(--gold-soft); }
   #nav::-webkit-scrollbar { display: none; }
   .nav-title { display: none; }
   .nav-item { flex: none; white-space: nowrap; padding: .3rem .55rem; font-size: .8rem; gap: .4rem; }
+  .nav-legend { display: none; }
+  .nav-reset { flex: none; margin: 0; white-space: nowrap; }
 
   #app { padding: 1.2rem 1rem 2rem; }
   h1 { font-size: 1.5rem; }
@@ -484,13 +531,16 @@ textarea:focus, input:focus { outline: 1px solid var(--gold-soft); }
   .spec-grid, .ct-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .4rem; }
   .spec-tile, .ct-tile { gap: .45rem; padding: .35rem .4rem; font-size: .8rem; }
   .spec-tile .icon, .ct-tile .icon { width: 30px; height: 30px; }
+  .ct-tile { gap: .35rem; font-size: .76rem; }
+  .ct-tile .icon { width: 26px; height: 26px; }
   .cols { grid-template-columns: minmax(0, 1fr); }
   .rank-row { gap: .35rem; }
   .rank-row .grow { font-size: .85rem; }
 
   .parchment { padding: 1rem; }
-  .actions { flex-wrap: wrap; }
-  .actions button { flex: 1 1 auto; }
+  .actions { gap: .4rem; }
+  .actions button { flex: 1 1 0; padding: .5rem .4rem; font-size: .8rem; }
+  .actions button.primary { flex-grow: 1.6; }
 
   /* Verdict: icon · name · % · badge, with the bar on its own row underneath. */
   .verdict { grid-template-columns: 24px minmax(0, 1fr) auto auto; column-gap: .5rem; row-gap: .3rem; font-size: .85rem; }
@@ -510,4 +560,6 @@ textarea:focus, input:focus { outline: 1px solid var(--gold-soft); }
   .results tr > :nth-child(2) { position: sticky; left: 0; z-index: 1; background: #1c130c; box-shadow: 1px 0 0 rgba(138, 106, 53, .4); }
   .results tr.main > :nth-child(2) { background: #2b1a0b; }
   .results .spec-cell { min-width: 9.5rem; }
+  /* Keep content columns readable; the table scrolls sideways instead of squeezing them. */
+  .results .ct-col, .results .cell { min-width: 6rem; }
 }
