@@ -1,6 +1,6 @@
 // Compares octy's chip ratings (public/ratings.js) with Jev. Prints a markdown report to stdout.
 //   1. Jev's own view: per rated option, a G/Y/X-style score for every spec, without octy's ratings.
-//   2. Faithfulness: the production prompt (src/prompt.js) for each chip alone, with octy's ratings.
+//   2. Faithfulness: the production prompt (src/prompt.js) for each chip alone as a dealbreaker, with octy's ratings.
 // Usage: node scripts/octy-vs-jev.mjs > report.md   (reads TYPESAFE_API_KEY from env or .dev.vars)
 import { readFileSync } from "node:fs";
 import { SPECS, CONTENT_TYPES } from "../public/data.js";
@@ -10,7 +10,6 @@ import { buildRequest } from "../src/prompt.js";
 const KEY = process.env.TYPESAFE_API_KEY ?? readFileSync(new URL("../.dev.vars", import.meta.url), "utf8").match(/^TYPESAFE_API_KEY=(.*)$/m)[1].trim();
 const CONCURRENCY = 4;
 const LEVELS = ["G", "Y", "X"];
-const NO_PREF = "No strong preference";
 
 let tokens = 0;
 let calls = 0;
@@ -91,11 +90,12 @@ await pool(questions, async ({ q, options }) => {
   }
 });
 
-// ---------- run 2: production prompt per chip, with octy's ratings ----------
-const ctFor = (q) => CONTENT_TYPES.find((c) => c.items.some((it) => it.q === q));
+// ---------- run 2: production prompt per chip (as a dealbreaker), with octy's ratings ----------
+// Playstyle questions belong to no content type; any label works for them.
+const ctFor = (q) => CONTENT_TYPES.find((c) => c.items.some((it) => it.q === q)) ?? CONTENT_TYPES[0];
 const chips = questions.flatMap(({ q, options }) => options.map(([option]) => ({ q, option })));
 await pool(chips, async ({ q, option }) => {
-  const body = buildRequest(ctFor(q), [{ q, answer: "", chosen: [option] }], SPECS);
+  const body = buildRequest(ctFor(q), { [q]: { chosen: [option], text: "", dealbreaker: true } }, SPECS);
   const answers = await jev(body);
   for (const [specId, a] of Object.entries(answers)) {
     const c = byKey.get(cellKey(q, option, specId));
@@ -105,23 +105,22 @@ await pool(chips, async ({ q, option }) => {
 
 // ---------- report ----------
 const pctOf = (n, d) => (d ? `${Math.round((100 * n) / d)}%` : "—");
-const informative = cells.filter((c) => c.option !== NO_PREF);
 const lines = [];
 const p = (s = "") => lines.push(s);
 
 p("# octy vs Jev: chip ratings");
 p();
-p(`${cells.length} rated cells (${informative.length} excluding "${NO_PREF}"), ${chips.length} chips, ${calls} Jev calls, ${tokens.toLocaleString()} input tokens (≈ $${((tokens / 1e6) * 0.042).toFixed(3)}).`);
+p(`${cells.length} rated cells, ${chips.length} chips, ${calls} Jev calls, ${tokens.toLocaleString()} input tokens (≈ $${((tokens / 1e6) * 0.042).toFixed(3)}).`);
 p();
 p("## 1. Jev's own view vs octy (no ratings given)");
 p();
-p(`Agreement: ${pctOf(informative.filter((c) => c.jev === c.octy).length, informative.length)} of informative cells (${pctOf(cells.filter((c) => c.jev === c.octy).length, cells.length)} including "${NO_PREF}").`);
+p(`Agreement: ${pctOf(cells.filter((c) => c.jev === c.octy).length, cells.length)}.`);
 p();
 p("| octy \\ Jev | G | Y | X |");
 p("|---|---|---|---|");
-for (const o of LEVELS) p(`| ${o} | ${LEVELS.map((j) => informative.filter((c) => c.octy === o && c.jev === j).length).join(" | ")} |`);
+for (const o of LEVELS) p(`| ${o} | ${LEVELS.map((j) => cells.filter((c) => c.octy === o && c.jev === j).length).join(" | ")} |`);
 p();
-const severe = informative.filter((c) => (c.octy === "X" && c.jev === "G") || (c.octy === "G" && c.jev === "X"));
+const severe = cells.filter((c) => (c.octy === "X" && c.jev === "G") || (c.octy === "G" && c.jev === "X"));
 p(`Severe disagreements (octy X ↔ Jev G, or octy G ↔ Jev X): ${severe.length}`);
 p();
 const tally = (list, key) => Object.entries(list.reduce((m, c) => ((m[key(c)] = (m[key(c)] ?? 0) + 1), m), {})).sort((a, b) => b[1] - a[1]);
@@ -141,18 +140,18 @@ for (const c of severe) p(`| ${c.spec.cls} ${c.spec.spec} | ${c.q} → ${c.optio
 p();
 p("</details>");
 p();
-p("## 2. Faithfulness of the production prompt (chip alone, octy's ratings given)");
+p("## 2. Faithfulness of the production prompt (chip alone as a dealbreaker, octy's ratings given)");
 p();
 p("| octy | cells | Jev excluded (P ≥ 0.5) | mean P(excluded) |");
 p("|---|---|---|---|");
 for (const o of LEVELS) {
-  const list = informative.filter((c) => c.octy === o && c.pExcl !== undefined);
+  const list = cells.filter((c) => c.octy === o && c.pExcl !== undefined);
   const excl = list.filter((c) => c.pExcl >= 0.5).length;
   const mean = list.reduce((a, c) => a + c.pExcl, 0) / (list.length || 1);
   p(`| ${o} | ${list.length} | ${excl} (${pctOf(excl, list.length)}) | ${mean.toFixed(2)} |`);
 }
-const xs = informative.filter((c) => c.octy === "X");
-const gs = informative.filter((c) => c.octy === "G");
+const xs = cells.filter((c) => c.octy === "X");
+const gs = cells.filter((c) => c.octy === "G");
 const faithful = xs.filter((c) => c.pExcl >= 0.5).length + gs.filter((c) => c.pExcl < 0.5).length;
 p();
 p(`Faithfulness (octy X excluded, octy G kept): ${pctOf(faithful, xs.length + gs.length)}`);

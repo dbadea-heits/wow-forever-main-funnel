@@ -1,30 +1,34 @@
 // Builds the TypeSafe System One request. Server-side only, so the endpoint can't be used as a general Jev proxy.
-import { octyRatings } from "../public/ratings.js";
+import { answerRatings } from "../public/funnel.js";
 
 const RATING_TEXT = { Y: "narrow match", X: "recommended to exclude" };
 
-// answers: [{q, answer, chosen}] with at least one of free text or chosen preset answers.
+// answers: {question: {chosen, text, dealbreaker}}, at least one with free text.
 export function buildRequest(contentType, answers, specs) {
-  const rated = answers.flatMap((a) => a.chosen.map((option) => ({ q: a.q, option, ratings: octyRatings(a.q, option) })));
-  // Only narrow/exclude ratings are listed; good matches and unrated specs carry no signal against the spec.
+  const entries = Object.entries(answers);
+  // octy's ratings only matter for dealbreakers: a preference never rules a spec out on its own.
+  const rated = entries
+    .filter(([, a]) => a.dealbreaker && a.chosen.length)
+    .map(([q, a]) => ({ q, options: a.chosen.join(" / "), ratings: answerRatings(q, a, answers) }));
   const ratingNotes = (s) =>
-    rated.flatMap(({ q, option, ratings }) => (RATING_TEXT[ratings[s.id]] ? [`${q} → ${option}: ${RATING_TEXT[ratings[s.id]]}`] : []));
+    rated.flatMap(({ q, options, ratings }) => (RATING_TEXT[ratings[s.id]] ? [`${q} → ${options}: ${RATING_TEXT[ratings[s.id]]}`] : []));
 
   return {
     state: {
       // Shared rules live in the state, which is billed once per call; question instructions are billed per question.
       rules: [
-        "Each of `player_answers` has `chosen_options` (preset answers), `free_text`, or both.",
-        "`specs.<id>.expert_ratings` lists an expert's rating of that spec for the player's chosen options; chosen options it doesn't list rate the spec as a good match or not at all.",
-        "Rule a spec out if a 'recommended to exclude' rating reflects what the player wants, or if free text directly conflicts with the spec.",
+        "Each of `player_answers` has `chosen_options` (preset answers), `free_text`, or both, and a `strength`: 'dealbreaker' or 'preference'.",
+        "`specs.<id>.expert_ratings` lists an expert's rating of that spec for the player's dealbreaker answers; dealbreakers it doesn't list rate the spec as a good match or not at all.",
+        "Rule a spec out if a dealbreaker's rating is 'recommended to exclude', or if free text states a firm requirement or dislike that directly conflicts with the spec.",
         "Free text that qualifies a chosen option (for example, allowing an exception) takes precedence over the rating.",
-        "A 'narrow match' alone is not a reason to rule a spec out, and neither are unanswered, neutral, or soft preferences.",
+        "Preference answers never rule a spec out on their own; neither do a 'narrow match', unanswered questions, or soft wishes in free text.",
       ],
       content_type: contentType.label,
-      player_answers: answers.map((a) => ({
-        question: a.q,
+      player_answers: entries.map(([q, a]) => ({
+        question: q,
         ...(a.chosen.length && { chosen_options: a.chosen }),
-        ...(a.answer && { free_text: a.answer }),
+        ...(a.text && { free_text: a.text }),
+        strength: a.dealbreaker ? "dealbreaker" : "preference",
       })),
       specs: Object.fromEntries(
         specs.map((s) => {

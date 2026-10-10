@@ -1,7 +1,5 @@
 // Jev client. The Worker at /api/judge builds the prompt, verifies the Turnstile token, and holds the TypeSafe key.
 
-export const EXCLUDE_THRESHOLD = 0.5;
-
 const TURNSTILE_SRC = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
 const CHECK_TIMEOUT_MS = 20_000; // silent check, before Cloudflare asks the visitor to interact
 const INTERACTIVE_TIMEOUT_MS = 90_000; // once the visitor is shown the challenge
@@ -84,10 +82,10 @@ async function humanToken(onPhase) {
   });
 }
 
-// answers: strings and choices: chosen preset answers, both aligned to the content type's items.
+// answers: {question: {chosen, text, dealbreaker}}, the content type's effective answers.
 // onPhase(phase) reports progress: "human" (visitor must complete the check), "checking", "trainer".
 // Returns {specId: P(excluded)}.
-export async function judge(contentType, answers, choices, specIds, onPhase) {
+export async function judge(contentType, answers, specIds, onPhase) {
   onPhase("checking");
   const token = await humanToken(onPhase);
   onPhase("trainer");
@@ -96,7 +94,7 @@ export async function judge(contentType, answers, choices, specIds, onPhase) {
     res = await fetch("/api/judge", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ contentType, answers, choices, specIds, token }),
+      body: JSON.stringify({ contentType, answers: Object.entries(answers).map(([q, a]) => ({ q, ...a })), specIds, token }),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
   } catch (e) {

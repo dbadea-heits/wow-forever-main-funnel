@@ -362,7 +362,7 @@ textarea:focus, input:focus { outline: 1px solid var(--gold-soft); }
   border-top: 1px solid rgba(138, 106, 53, .4);
 }
 .add-detail {
-  justify-self: start;
+  display: block;
   font: 600 .8rem "Open Sans", system-ui, sans-serif;
   letter-spacing: 0;
   padding: 0; margin-top: -.1rem;
@@ -370,6 +370,15 @@ textarea:focus, input:focus { outline: 1px solid var(--gold-soft); }
   text-decoration: underline;
 }
 .add-detail:hover:not(:disabled) { color: #3b2610; filter: none; }
+.q .multi { font-family: "Open Sans", system-ui, sans-serif; font-size: .75rem; color: #7a5a2c; text-transform: none; }
+.dealbreaker { display: flex; width: fit-content; align-items: center; gap: .4rem; margin: 0 0 .35rem; font-size: .8rem; color: #5c4123; cursor: pointer; }
+.dealbreaker.on { color: #8a1c0c; font-weight: 700; }
+.override { border-left: 3px solid #a98450; padding-left: .8rem; }
+.override-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: .3rem; }
+.playstyle-here summary { cursor: pointer; color: var(--gold-soft); font-family: var(--heading); }
+.playstyle-here ul { list-style: none; padding: 0; margin: .6rem 0 0; display: grid; gap: .35rem; }
+.playstyle-here li { display: flex; align-items: center; gap: .6rem; font-size: .88rem; }
+.counter { flex: 1; align-self: center; font-family: var(--heading); color: var(--gold); }
 
 .badge {
   display: inline-block;
@@ -394,7 +403,7 @@ textarea:focus, input:focus { outline: 1px solid var(--gold-soft); }
 .verdicts p { margin: 0 0 .3rem; }
 .verdict {
   display: grid;
-  grid-template-columns: 24px 14rem 1fr 3rem 8.5rem;
+  grid-template-columns: 24px 14rem 1fr 4.5rem 8.5rem;
   align-items: center;
   gap: .8rem;
   text-align: left;
@@ -415,6 +424,7 @@ textarea:focus, input:focus { outline: 1px solid var(--gold-soft); }
 /* WoW cast-bar style */
 .bar { height: .6rem; background: #0b0805; border: 1px solid #000; border-radius: 3px; box-shadow: 0 0 0 1px #4a3c2a; overflow: hidden; }
 .bar span { display: block; height: 100%; background: linear-gradient(180deg, #ff6b4a, #b3200f); }
+.bar.fit span { background: linear-gradient(180deg, #ffe27a, #b8860b); }
 .pct { text-align: right; color: var(--muted); font-size: .85rem; }
 
 /* ---------- results ---------- */
@@ -457,6 +467,14 @@ textarea:focus, input:focus { outline: 1px solid var(--gold-soft); }
 .step-links { display: inline-flex; flex-wrap: wrap; gap: .4rem; vertical-align: middle; }
 .empty-results { text-align: center; }
 .empty-results .step-links { justify-content: center; }
+.flags { margin: .4rem 0 0; padding-left: 1.2rem; display: grid; gap: .25rem; }
+.review h3 { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+.review dl { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .3rem 1rem; margin: 0; font-size: .88rem; }
+.review dt { color: var(--muted); }
+.review dd { margin: 0; }
+.tiebreak { text-align: center; }
+.tiebreak-pair { display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap; }
+.loot-choice { display: flex; align-items: center; gap: .7rem; padding: .7rem 1.1rem; font-size: 1rem; }
 
 /* ---------- tooltip ---------- */
 

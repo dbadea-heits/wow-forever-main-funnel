@@ -107,95 +107,68 @@ export const FUNDAMENTALS = [
 
 const qs = (list) => list.map((q) => ({ q }));
 
-const PVP_Q = [
-  "Any obvious exclusions?",
-  "Do you prefer to kite and reset, or survive and outlast?",
+// Asked once on the Playstyle step and applied to every content type (each step can override an answer).
+// "Any obvious exclusions?" became the click-to-exclude grid on the Look back step.
+export const PLAYSTYLE = qs([
   "Do you want your character to be dot/hot focused or direct damage/healing focused?",
-  "Self-healing: negotiable?",
   "How do you feel about Shapeshifting during battle?",
   "Do you have any preference in terms of schools of magic?",
   "Do you prefer brute, raw strength or dexterity and skill?",
   "How do you feel about pet-based classes?",
   "Is mobility mandatory?",
   "Is having a finite resource a dealbreaker (mana)?",
+  "Any general aesthetic preferences? Sound design?",
+]);
+
+const PVP_Q = [
+  "Do you prefer to kite and reset, or survive and outlast?",
+  "Self-healing: negotiable?",
   "Are you ok if your class is heavily Cooldown reliant?",
   "Do you NEED a Stun in the kit?",
   "Do you NEED strong escape/engage potential?",
-  "Any general aesthetic preferences? Sound design?",
 ];
 
-const BG_Q = [
-  ...PVP_Q.slice(0, 5),
-  ...PVP_Q.slice(7, 13),
-  "Do you want to be expected to flag carry?",
-  "Do you want to be expected to defend a base?",
-  "Any general aesthetic preferences? Sound design? Strength vs. Dex? Magical schools?",
+// `when`: only asked if the pool still has a spec with that role.
+const RAID_ITEMS = [
+  { q: "Do you care more about doing maximum personal damage, or increasing the raid's damage?" },
+  { q: "Do you want to be able to off-tank or re-spec tank?" },
+  { q: "Do you want to be able to off-heal or re-spec healer?" },
+  { q: "If Healers are in your list: Tank healing or Raid healing?", when: "Healer" },
+  { q: "If Tanks are in your list: is it a deal breaker if you have to manage a finite resource (mana)?", when: "Tank" },
+  { q: "Any other considerations? Novelty?" },
 ];
 
-const RAID_Q = [
-  "Any obvious exclusions?",
-  "Do you care more about doing maximum personal damage, or increasing the raid's damage?",
-  "Do you want your character to be dot/hot focused or direct damage/healing focused?",
-  "Do you want to be able to off-tank or re-spec tank?",
-  "Do you want to be able to off-heal or re-spec healer?",
-  "If Healers are in your list: Tank healing or Raid healing?",
-  "If Tanks are in your list: is it a deal breaker if you have to manage a finite resource (mana)?",
-  "How do you feel about Shapeshifting during battle?",
-  "Do you have any preference in terms of schools of magic?",
-  "Do you prefer brute, raw strength or dexterity and skill?",
-  "How do you feel about pet-based classes?",
-  "Is having a finite resource a dealbreaker (mana)?",
-  "Any general aesthetic preferences?",
-  "Any other considerations? Novelty?",
-];
-
+// `showIf`: only asked once another question in the step has that answer.
 export const CONTENT_TYPES = [
   { id: "pvp_1vx", icon: "ability_dualwield", label: "1vX PVP", examples: [{ who: "octy", t: 510 }], items: qs(PVP_Q) },
   { id: "pvp_small", icon: "achievement_arena_2v2_7", label: "Small group PVP", examples: [{ who: "Dqve", t: 2672 }], items: qs(PVP_Q) },
   { id: "pvp_large", icon: "inv_bannerpvp_02", label: "Large scale PVP", examples: [], items: qs(PVP_Q) },
-  { id: "bgs", icon: "inv_misc_rune_07", label: "BGs", examples: [{ who: "octy", t: 711 }, { who: "Dqve", t: 2390 }, { who: "Theo", t: 3308 }], items: qs(BG_Q) },
-  { id: "ganking", icon: "ability_rogue_ambush", label: "Ganking/griefing", examples: [], tip: "octy's sheet: just roll Rogue, or Priest, or Druid.",
-    items: qs(["Any obvious exclusions?", "Any general aesthetic preferences?"]) },
+  { id: "bgs", icon: "inv_misc_rune_07", label: "BGs", examples: [{ who: "octy", t: 711 }, { who: "Dqve", t: 2390 }, { who: "Theo", t: 3308 }],
+    items: qs([...PVP_Q, "Do you want to be expected to flag carry?", "Do you want to be expected to defend a base?"]) },
+  { id: "ganking", icon: "ability_rogue_ambush", label: "Ganking/griefing", examples: [], tip: "octy's sheet: just roll Rogue, or Priest, or Druid.", items: [] },
   { id: "dungeons", icon: "inv_misc_key_03", label: "Dungeons", examples: [{ who: "Osa", t: 1773 }, { who: "Dqve", t: 2768 }, { who: "Theo", t: 3244 }],
     items: qs([
-      "Any obvious exclusions?",
       "Do you care more about doing maximum personal damage, or increasing the group's damage?",
-      "Do you want your character to be dot/hot focused or direct damage/healing focused?",
       "Do you want to be able to off-tank or re-spec tank?",
       "Do you want to be able to off-heal or re-spec healer?",
       "Big AOE, or massive Single Target?",
-      "How do you feel about Shapeshifting during battle?",
-      "Do you have any preference in terms of schools of magic?",
-      "Do you prefer brute, raw strength or dexterity and skill?",
-      "How do you feel about pet-based classes?",
-      "Is mobility mandatory?",
-      "Is having a finite resource a dealbreaker (mana)?",
-      "Any general aesthetic preferences?",
       "Any other considerations? Novelty?",
     ]) },
-  { id: "raid_pug", icon: "inv_misc_head_dragon_01", label: "Raiding in PUGs", examples: [{ who: "octy", t: 792 }], items: qs(RAID_Q) },
-  { id: "raid_guild", icon: "inv_misc_tabardpvp_01", label: "Raiding in a Guild", examples: [{ who: "Theo", t: 3048 }], items: qs(RAID_Q) },
-  { id: "speedrun", icon: "spell_nature_swiftness", label: "Speedrunning", examples: [], tip: "octy's sheet: wait for the tierlists to come out, and align with your raid.",
-    items: qs(["Any obvious exclusions?"]) },
+  { id: "raid_pug", icon: "inv_misc_head_dragon_01", label: "Raiding in PUGs", examples: [{ who: "octy", t: 792 }], items: RAID_ITEMS },
+  { id: "raid_guild", icon: "inv_misc_tabardpvp_01", label: "Raiding in a Guild", examples: [{ who: "Theo", t: 3048 }], items: RAID_ITEMS },
+  { id: "speedrun", icon: "spell_nature_swiftness", label: "Speedrunning", examples: [], tip: "octy's sheet: wait for the tierlists to come out, and align with your raid.", items: [] },
   { id: "leveling", icon: "inv_misc_book_09", label: "Leveling", examples: [{ who: "Osa", t: 1373 }],
     items: qs([
-      "Any obvious exclusions?",
       "What have you already leveled to 60 before?",
       "Do you want a new experience, or do you want to refine your route?",
       "How much of a challenge do you want?",
       "How do you feel about downtime?",
       "Any AOE grinding or just pure questing?",
       "How about dungeons - do you want to be able to heal/tank dungeons while leveling?",
-      "How do you feel about Shapeshifting during battle?",
-      "Do you have any preference in terms of schools of magic?",
-      "Do you prefer brute, raw strength or dexterity and skill?",
-      "How do you feel about pet-based classes?",
       "Do you care about a free level 40 mount?",
-      "Any general aesthetic preferences?",
     ]) },
   { id: "hardcore", icon: "inv_misc_bone_humanskull_01", label: "Hardcore", examples: [],
     items: qs([
-      "Any obvious exclusions?",
       "What have you already leveled to 60 on HC before?",
       "Do you want a new experience, or do you want to refine your route?",
       "How much of a challenge do you want?",
@@ -204,11 +177,6 @@ export const CONTENT_TYPES = [
       "How about dungeons - do you want to be able to heal/tank dungeons while leveling?",
       "Do you want to have hard saves/escapes, or are you ok dying to a serious mistake?",
       "Planning to raid at 60?",
-      "How do you feel about Shapeshifting during battle?",
-      "Do you have any preference in terms of schools of magic?",
-      "Do you prefer brute, raw strength or dexterity and skill?",
-      "How do you feel about pet-based classes?",
-      "Any general aesthetic preferences?",
     ]) },
   { id: "roleplay", icon: "inv_misc_note_06", label: "Roleplay", examples: [{ who: "Osa", t: 1965 }],
     items: [
@@ -222,16 +190,14 @@ export const CONTENT_TYPES = [
       { q: "What alignment are you leaning towards for your first character? Do you want it to match their typical class / spec fantasy?" },
     ] },
   { id: "farming", icon: "inv_misc_coin_01", label: "Farming/professions", examples: [],
-    items: qs([
-      "Any obvious exclusions?",
-      "Raw gold/kill-based farms?",
-      "Or Professions/Auction House?",
-      "Do you want to min-max your farming efficiency?",
-      "If so, from what perspective: movement? Downtime? Time to kill? Gather speed?",
-      "Solo farms only, or do you want to go for group content?",
-      "How do you feel about pet-based classes?",
-      "Any general aesthetic preferences?",
-    ]) },
+    items: [
+      { q: "Raw gold/kill-based farms?" },
+      { q: "Or Professions/Auction House?" },
+      { q: "Do you want to min-max your farming efficiency?" },
+      { q: "If so, from what perspective: movement? Downtime? Time to kill? Gather speed?",
+        showIf: { q: "Do you want to min-max your farming efficiency?", option: "Yes, I want to play the BEST farming class" } },
+      { q: "Solo farms only, or do you want to go for group content?" },
+    ] },
 ];
 
 // octy's weights: 3 for the top content type, then 2, 1, and 0.5 for the rest.

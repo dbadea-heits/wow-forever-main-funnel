@@ -1,11 +1,11 @@
 import { DurableObject } from "cloudflare:workers";
-import { SPECS, CONTENT_TYPES } from "../public/data.js";
-import { TEXTURE_OPTIONS } from "../public/ratings.js";
+import { SPECS, CONTENT_TYPES, PLAYSTYLE } from "../public/data.js";
+import { TEXTURE_OPTIONS, MULTI_CHOICE } from "../public/ratings.js";
 import { buildRequest } from "./prompt.js";
 
 const UPSTREAM = "https://api.typesafe.ai/v1/systemone";
 const SITEVERIFY = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
-const MAX_BODY_BYTES = 40_000; // 14 answers × 500 chars, worst-case JSON escaping, chosen preset answers, spec ids, Turnstile token
+const MAX_BODY_BYTES = 64_000; // ≤ 15 questions × 500 chars of text, worst-case JSON escaping, presets, spec ids, token
 const MAX_ANSWER_CHARS = 500;
 const MAX_TOKEN_CHARS = 2048;
 const UPSTREAM_TIMEOUT_MS = 60_000;
@@ -16,9 +16,9 @@ const SPEC = Object.fromEntries(SPECS.map((s) => [s.id, s]));
 const json = (status, body) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 
-// Request body: {contentType: id, answers: string[] and choices: string[][] (chosen preset answers), both aligned to
-// CONTENT_TYPES[].items, specIds: string[], token: Turnstile token}.
-// Returns {contentType, answers: [{q, answer, chosen}], specs, token} or an error string.
+// Request body: {contentType: id, answers: [{q, chosen: string[], text, dealbreaker}], specIds: string[], token}.
+// `q` must be one of the content type's questions or a Playstyle question; `chosen` must be its preset answers.
+// Returns {contentType, answers: {q: {chosen, text, dealbreaker}}, specs, token} or an error string.
 function parseJudgeRequest(raw) {
   let body;
   try {
@@ -28,21 +28,25 @@ function parseJudgeRequest(raw) {
   }
   const ct = CT[body?.contentType];
   if (!ct) return "unknown contentType";
-  const { answers, choices, specIds } = body;
-  if (!Array.isArray(answers) || answers.length !== ct.items.length) return "answers must align with the content type's items";
-  if (!answers.every((a) => typeof a === "string" && a.length <= MAX_ANSWER_CHARS)) return `answers must be strings of at most ${MAX_ANSWER_CHARS} chars`;
-  if (!Array.isArray(choices) || choices.length !== ct.items.length) return "choices must align with the content type's items";
-  const isPreset = (i, a) => typeof a === "string" && Object.hasOwn(TEXTURE_OPTIONS[ct.items[i].q] ?? {}, a);
-  if (!choices.every((c, i) => Array.isArray(c) && new Set(c).size === c.length && c.every((a) => isPreset(i, a))))
-    return "choices must be unique preset answers of their question";
+  const allowed = new Set([...ct.items, ...PLAYSTYLE].map((it) => it.q).filter(Boolean));
+  const { answers: list, specIds } = body;
+  if (!Array.isArray(list) || list.length > allowed.size) return "answers must be a list of at most one answer per question";
+  const answers = {};
+  for (const a of list) {
+    if (!allowed.has(a?.q) || Object.hasOwn(answers, a.q)) return "answers must be unique questions of this content type or Playstyle";
+    if (typeof a.text !== "string" || a.text.length > MAX_ANSWER_CHARS) return `answer text must be a string of at most ${MAX_ANSWER_CHARS} chars`;
+    if (typeof a.dealbreaker !== "boolean") return "dealbreaker must be a boolean";
+    const options = TEXTURE_OPTIONS[a.q] ?? {};
+    if (!Array.isArray(a.chosen) || new Set(a.chosen).size !== a.chosen.length || !a.chosen.every((o) => typeof o === "string" && Object.hasOwn(options, o)))
+      return "chosen must be unique preset answers of their question";
+    if (a.chosen.length > 1 && !MULTI_CHOICE.has(a.q)) return "only one preset answer allowed for this question";
+    if (a.chosen.length || a.text.trim()) answers[a.q] = { chosen: a.chosen, text: a.text.trim(), dealbreaker: a.dealbreaker };
+  }
+  if (!Object.values(answers).some((a) => a.text)) return "the trainer is only needed for written notes";
   if (!Array.isArray(specIds) || specIds.length === 0 || new Set(specIds).size !== specIds.length || !specIds.every((id) => SPEC[id]))
     return "specIds must be a non-empty list of unique known spec ids";
   if (typeof body.token !== "string" || !body.token || body.token.length > MAX_TOKEN_CHARS) return "missing human check token";
-  const qa = ct.items
-    .map((it, i) => ({ q: it.q, answer: answers[i].trim(), chosen: choices[i] }))
-    .filter((a) => a.q && (a.answer || a.chosen.length));
-  if (!qa.length) return "no answers given";
-  return { contentType: ct, answers: qa, specs: specIds.map((id) => SPEC[id]), token: body.token };
+  return { contentType: ct, answers, specs: specIds.map((id) => SPEC[id]), token: body.token };
 }
 
 // Cross-site pages can POST text/plain without a CORS preflight. Requiring JSON forces a preflight,
