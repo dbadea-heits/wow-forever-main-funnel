@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "compare": "node scripts/octy-vs-jev.mjs"
+    "compare": "node scripts/octy-vs-jev.mjs",
+    "interviews": "node scripts/replay-interviews.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.149.0"

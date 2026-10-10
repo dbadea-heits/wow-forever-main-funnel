@@ -2,47 +2,12 @@
 //   1. Jev's own view: per rated option, a G/Y/X-style score for every spec, without octy's ratings.
 //   2. Faithfulness: the production prompt (src/prompt.js) for each chip alone as a dealbreaker, with octy's ratings.
 // Usage: node scripts/octy-vs-jev.mjs > report.md   (reads TYPESAFE_API_KEY from env or .dev.vars)
-import { readFileSync } from "node:fs";
 import { SPECS, CONTENT_TYPES } from "../public/data.js";
 import { TEXTURE_OPTIONS } from "../public/ratings.js";
 import { buildRequest } from "../src/prompt.js";
+import { jev, pool, usage, costOf } from "./jev-api.mjs";
 
-const KEY = process.env.TYPESAFE_API_KEY ?? readFileSync(new URL("../.dev.vars", import.meta.url), "utf8").match(/^TYPESAFE_API_KEY=(.*)$/m)[1].trim();
-const CONCURRENCY = 4;
 const LEVELS = ["G", "Y", "X"];
-
-let tokens = 0;
-let calls = 0;
-async function jev(body) {
-  for (let attempt = 0; ; attempt++) {
-    const res = await fetch("https://api.typesafe.ai/v1/systemone", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if ((res.status === 429 || res.status === 529) && attempt < 4) {
-      await new Promise((r) => setTimeout(r, 2000 * 2 ** attempt));
-      continue;
-    }
-    if (!res.ok) throw new Error(`Jev ${res.status}: ${await res.text()}`);
-    const json = await res.json();
-    tokens += json.usage.input_tokens;
-    calls++;
-    return json.answers;
-  }
-}
-
-async function pool(items, fn) {
-  const out = new Array(items.length);
-  let next = 0;
-  await Promise.all(Array.from({ length: CONCURRENCY }, async () => {
-    while (next < items.length) {
-      const i = next++;
-      out[i] = await fn(items[i]);
-    }
-  }));
-  return out;
-}
 
 const describe = (s) => `${s.cls} ${s.spec} (${s.role}): ${s.traits}`;
 // Every rated (question, option, spec) cell: octy's letter plus room for Jev's verdicts.
@@ -110,7 +75,7 @@ const p = (s = "") => lines.push(s);
 
 p("# octy vs Jev: chip ratings");
 p();
-p(`${cells.length} rated cells, ${chips.length} chips, ${calls} Jev calls, ${tokens.toLocaleString()} input tokens (≈ $${((tokens / 1e6) * 0.042).toFixed(3)}).`);
+p(`${cells.length} rated cells, ${chips.length} chips, ${usage.calls} Jev calls, ${usage.tokens.toLocaleString()} input tokens (≈ $${costOf(usage.tokens).toFixed(3)}).`);
 p();
 p("## 1. Jev's own view vs octy (no ratings given)");
 p();
