@@ -1,0 +1,34 @@
+name = "wow-forever-main-funnel"
+main = "src/worker.js"
+compatibility_date = "2026-10-01"
+
+# Static site. Requests that match a file are served free and never invoke the Worker.
+[assets]
+directory = "./public"
+
+[vars]
+# Global cap on Jev calls per UTC day (protects the TypeSafe bill).
+DAILY_LIMIT = "500"
+
+# Turnstile sitekey (public), from the Cloudflare dashboard widget for this site's hostname.
+# Local dev overrides it in .dev.vars with the always-pass test key 1x00000000000000000000AA.
+TURNSTILE_SITE_KEY = "0x4AAAAAAFTPxhbZW9yODaqI"
+
+# Per-visitor burst limit, counted per Cloudflare location. period must be 10 or 60.
+[[ratelimits]]
+name = "IP_LIMITER"
+namespace_id = "1001"
+simple = { limit = 5, period = 60 }
+
+[[durable_objects.bindings]]
+name = "BUDGET"
+class_name = "DailyBudget"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["DailyBudget"]
+
+# Secrets (not in this file): TYPESAFE_API_KEY, TURNSTILE_SECRET
+#   production: npx wrangler secret put TYPESAFE_API_KEY
+#               npx wrangler secret put TURNSTILE_SECRET   (the Turnstile widget's secret key)
+#   local dev:  put both in .dev.vars, plus TURNSTILE_SITE_KEY; test secret 1x0000000000000000000000000000000AA always passes
