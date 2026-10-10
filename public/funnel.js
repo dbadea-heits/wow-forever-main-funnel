@@ -51,22 +51,55 @@ export function localVerdict(answers, specs) {
 
 const hasText = (answers) => Object.values(answers).some((a) => a.text.trim());
 
+const sameAnswer = (a, b) =>
+  a.dealbreaker === b.dealbreaker && a.text.trim() === b.text.trim() && a.chosen.length === b.chosen.length && a.chosen.every((o) => b.chosen.includes(o));
+
 // Identifies the inputs a trainer verdict was computed from; a verdict is current only while this is unchanged.
 export const trainerKey = (answers, specs) =>
   JSON.stringify([Object.entries(answers).sort(([a], [b]) => (a < b ? -1 : 1)), specs.map((s) => s.id)]);
 
-// One content type's verdict. Free text needs the trainer, whose verdict (over the preset answers too) wins while
-// it's current; otherwise octy's ratings decide locally. Manual overrides beat both.
-export function stepVerdict({ answers, specs, trainer, override }) {
+// One set of answers judged: octy's ratings locally, the trainer's verdict on top while it's current (only free text
+// needs it). Dealbreakers are absolute: what they rule out stays out whatever the trainer says.
+export function judgeAnswers(answers, specs, trainer) {
   const local = localVerdict(answers, specs);
   const needsTrainer = hasText(answers);
   const useTrainer = needsTrainer && trainer?.key === trainerKey(answers, specs);
   const kept = new Set(
-    specs
-      .filter((s) => (s.id in override ? override[s.id] : useTrainer ? trainer.pExcl[s.id] < EXCLUDE_THRESHOLD : !local.excluded.has(s.id)))
-      .map((s) => s.id),
+    specs.filter((s) => !local.excluded.has(s.id) && (!useTrainer || trainer.pExcl[s.id] < EXCLUDE_THRESHOLD)).map((s) => s.id),
   );
   return { kept, fit: local.fit, pExcl: useTrainer ? trainer.pExcl : null, trainerPending: needsTrainer && !useTrainer };
+}
+
+// What a content type's own trainer call reads. Normally just the step's answers: the Playstyle answers are judged
+// once, on the Playstyle page, and that verdict is reused. A step that changes a Playstyle answer is judged on its
+// full set of answers instead, since the shared verdict no longer describes it.
+export function stepTrainerAnswers(playstyle, overrides, own) {
+  const changed = Object.fromEntries(Object.entries(overrides).filter(([q, a]) => !sameAnswer(a, playstyle[q] ?? emptyAnswer())));
+  return Object.keys(changed).length
+    ? { sharesPlaystyle: false, answers: effectiveAnswers(playstyle, changed, own) }
+    : { sharesPlaystyle: true, answers: effectiveAnswers({}, {}, own) };
+}
+
+// A content type with nothing to ask and no favored classes would hand every spec full points, so it isn't scored.
+export const isScored = (ct) => ct.items.length > 0 || !!ct.favors;
+
+// One content type's verdict: the shared Playstyle verdict (unless the step changes a Playstyle answer) and the step's
+// own answers, then the content type's favored classes (octy's tip), then the player's manual overrides.
+// trainerPending: the step's own notes aren't read yet (unread Playstyle notes are the Playstyle page's to report).
+export function stepVerdict({ playstyle, playstyleTrainer, overrides, own, specs, trainer, override, favors }) {
+  const { sharesPlaystyle, answers } = stepTrainerAnswers(playstyle, overrides, own);
+  const step = judgeAnswers(answers, specs, trainer);
+  const shared = sharesPlaystyle ? judgeAnswers(effectiveAnswers(playstyle, {}, {}), specs, playstyleTrainer) : null;
+  const pExcl = shared?.pExcl || step.pExcl
+    ? Object.fromEntries(specs.map((s) => [s.id, Math.max(shared?.pExcl?.[s.id] ?? 0, step.pExcl?.[s.id] ?? 0)]))
+    : null;
+  const kept = new Set(
+    specs
+      .filter((s) => (s.id in override ? override[s.id] : step.kept.has(s.id) && (!shared || shared.kept.has(s.id)) && (!favors || favors.includes(s.cls))))
+      .map((s) => s.id),
+  );
+  const fit = localVerdict(effectiveAnswers(playstyle, overrides, own), specs).fit;
+  return { kept, fit, pExcl, trainerPending: step.trainerPending };
 }
 
 // A rated question can't change anything when each of its answers rates every remaining spec the same.
@@ -74,7 +107,7 @@ function distinguishes(q, pool, answers) {
   const options = optionsOf(q);
   if (!options.length) return true; // free text
   const vectors = options.map((o) => ratingsOf(q, o, answers));
-  if (vectors.every((v) => !Object.keys(v).length)) return true; // unrated context question (e.g. "raid at 60?")
+  if (vectors.every((v) => !Object.keys(v).length)) return true; // unrated branch question (e.g. "Will your RP character…?")
   return vectors.some((v) => new Set(pool.map((s) => v[s.id] ?? ".")).size > 1);
 }
 
@@ -92,12 +125,9 @@ function splitScore(q, pool, answers) {
 // (role not in the pool, unmet showIf, no effect) are dropped unless already answered, so they can still be cleared.
 export function questionsToAsk(items, pool, answers) {
   const roles = new Set(pool.map((s) => s.role));
+  const met = (it) => !it.showIf || answers[it.showIf.q]?.chosen.includes(it.showIf.option);
   const shown = items.filter((it) =>
-    it.hint || isAnswered(answers[it.q]) || (
-      (!it.when || roles.has(it.when)) &&
-      (!it.showIf || answers[it.showIf.q]?.chosen.includes(it.showIf.option)) &&
-      distinguishes(it.q, pool, answers)
-    ));
+    it.hint ? met(it) : isAnswered(answers[it.q]) || ((!it.when || roles.has(it.when)) && met(it) && distinguishes(it.q, pool, answers)));
   const score = (it) => (it.q && optionsOf(it.q).length ? splitScore(it.q, pool, answers) : -1);
   // Stable sort: free-text questions and hints (score -1) keep their order after the rated ones.
   return shown.map((it, i) => ({ it, i, s: score(it) })).sort((a, b) => b.s - a.s || a.i - b.i).map((x) => x.it);

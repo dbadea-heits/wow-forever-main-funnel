@@ -3,7 +3,7 @@
 const TURNSTILE_SRC = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
 const CHECK_TIMEOUT_MS = 20_000; // silent check, before Cloudflare asks the visitor to interact
 const INTERACTIVE_TIMEOUT_MS = 90_000; // once the visitor is shown the challenge
-const REQUEST_TIMEOUT_MS = 30_000;
+const REQUEST_TIMEOUT_MS = 75_000; // longer than the Worker's 60 s upstream wait plus the human check, so a slow reply that's billed still arrives
 
 let sitekey; // Promise<string>; cleared on failure so the next ask retries setup
 let active; // the human check in progress: {cancel}
@@ -68,7 +68,8 @@ async function humanToken(onPhase) {
       theme: "dark",
       callback: (token) => finish(resolve, token),
       "error-callback": (code) => {
-        finish(reject, new Error(`The human check failed (${code}).`));
+        console.warn("Turnstile error", code);
+        finish(reject, new Error("Couldn't confirm you're human — try again, or turn off strict privacy settings or blockers for this site."));
         return true; // handled; stops Turnstile from also throwing
       },
       "timeout-callback": () => finish(reject, new Error("The human check timed out.")),

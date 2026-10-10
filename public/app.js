@@ -3,8 +3,8 @@ import { judge, cancelHumanCheck } from "./jev.js";
 import { saveLocal, loadLocal, clearLocal, encodeShare, decodeShare } from "./persist.js";
 import { TEXTURE_OPTIONS, ratingsOf } from "./ratings.js";
 import {
-  emptyAnswer, isAnswered, isMulti, optionsOf, effectiveAnswers, answerRatings, localVerdict, stepVerdict,
-  trainerKey, questionsToAsk, scoreSpecs, sameScore, knockout,
+  emptyAnswer, isAnswered, isMulti, optionsOf, effectiveAnswers, answerRatings, judgeAnswers, stepVerdict, stepTrainerAnswers,
+  isScored, trainerKey, questionsToAsk, scoreSpecs, sameScore, knockout,
 } from "./funnel.js";
 
 const CT = Object.fromEntries(CONTENT_TYPES.map((c) => [c.id, c]));
@@ -18,11 +18,16 @@ const state = {
   picked: [], // [{id, weight, custom}] in rank order; custom = weight typed by the user, so it no longer follows the rank
   manualExcl: new Set(),
   playstyle: {}, // question -> answer ({chosen, text, dealbreaker}); applies to every content type
+  playstyleTrainer: null, // {key, pExcl}: the trainer's reading of the Playstyle notes, reused by every content type
   // ctId -> {answers, overrides (Playstyle answers replaced for this content type), visited, skipped,
-  //          trainer: {key, pExcl} | null, override: {specId: kept}, error, loading, phase} — the last three aren't saved.
+  //          trainer: {key, pExcl} | null, override: {specId: kept}}
   texture: {},
   tiebreak: {}, // "specA|specB" (sorted) -> the spec the player would rather play
 };
+
+// Per-page UI that isn't saved: trainer call progress and errors, the results tie-breaker panel.
+const ui = {};
+const uiOf = (stepId) => (ui[stepId] ??= { loading: false, phase: null, error: null, choosing: false });
 
 // ---------- derived state ----------
 
@@ -33,32 +38,27 @@ const pool = () =>
 const basePool = () => pool().filter((s) => !state.manualExcl.has(s.id));
 
 function textureOf(ctId) {
-  return (state.texture[ctId] ??= {
-    answers: {},
-    overrides: {},
-    visited: false,
-    skipped: false,
-    trainer: null,
-    override: {},
-    error: null,
-    loading: false,
-    phase: null,
-  });
+  return (state.texture[ctId] ??= { answers: {}, overrides: {}, visited: false, skipped: false, trainer: null, override: {} });
 }
 
 const answersFor = (ctId) => {
   const t = textureOf(ctId);
   return effectiveAnswers(state.playstyle, t.overrides, t.answers);
 };
+const playstyleVerdict = () => judgeAnswers(effectiveAnswers(state.playstyle, {}, {}), basePool(), state.playstyleTrainer);
 const verdictOf = (ctId) => {
   const t = textureOf(ctId);
-  return stepVerdict({ answers: answersFor(ctId), specs: basePool(), trainer: t.trainer, override: t.override });
+  return stepVerdict({
+    playstyle: state.playstyle, playstyleTrainer: state.playstyleTrainer, overrides: t.overrides, own: t.answers,
+    specs: basePool(), trainer: t.trainer, override: t.override, favors: CT[ctId].favors,
+  });
 };
 
 // pending: not opened yet · stale: written notes the trainer hasn't read · evaluated: everything decided.
 function statusOf(ctId) {
   const t = textureOf(ctId);
   if (t.skipped) return "skipped";
+  if (!isScored(CT[ctId])) return "unscored";
   if (!t.visited) return "pending";
   return verdictOf(ctId).trainerPending ? "stale" : "evaluated";
 }
@@ -68,7 +68,14 @@ const STATUS_LABEL = {
   evaluated: "decided",
   stale: "notes not read by the trainer yet",
   skipped: "skipped",
+  unscored: "not scored (nothing to ask)",
 };
+
+// The status dot of a nav step: content types always have one, Playstyle only while its notes are unread.
+function navStatus(s) {
+  if (s.ct) return statusOf(s.ct);
+  return s.id === "playstyle" && playstyleVerdict().trainerPending ? "stale" : null;
+}
 
 // ---------- step list & gating ----------
 
@@ -166,19 +173,20 @@ function render() {
         {
           class: `nav-item${s.id === state.step ? " active" : ""}`,
           disabled: i > block,
-          title: s.ct ? `${s.label}: ${STATUS_LABEL[statusOf(s.ct)]}` : null,
+          title: navStatus(s) ? `${s.label}: ${STATUS_LABEL[navStatus(s)]}` : null,
           onclick: () => go(s.id),
         },
         icon(s.icon, "sm"),
         el("span", { class: "grow" }, s.label),
-        s.ct ? el("span", { class: `dot ${statusOf(s.ct)}` }) : null,
+        navStatus(s) ? el("span", { class: `dot ${navStatus(s)}` }) : null,
       ),
     ),
     state.picked.length
       ? el("div", { class: "nav-legend" },
-          Object.entries(STATUS_LABEL).map(([status, label]) => el("div", {}, el("span", { class: `dot ${status}` }), label)))
+          Object.entries(STATUS_LABEL)
+            .filter(([status]) => status !== "unscored" || state.picked.some((p) => statusOf(p.id) === "unscored"))
+            .map(([status, label]) => el("div", {}, el("span", { class: `dot ${status}` }), label)))
       : null,
-    el("button", { class: "nav-reset", onclick: startOver }, "Start over"),
   );
 
   // On the mobile step strip, keep the current step in view.
@@ -229,6 +237,7 @@ function snapshot() {
     picked: state.picked,
     manualExcl: [...state.manualExcl],
     playstyle: state.playstyle,
+    playstyleTrainer: state.playstyleTrainer,
     texture: Object.fromEntries(
       Object.entries(state.texture).map(([id, t]) => [id, {
         answers: t.answers, overrides: t.overrides, visited: t.visited, skipped: t.skipped, trainer: t.trainer, override: t.override,
@@ -257,6 +266,10 @@ function restore(snap) {
     };
   };
   const answerMap = (x, questions) => Object.fromEntries(Object.entries(obj(x)).filter(([q]) => questions.has(q)).map(([q, a]) => [q, answer(q, a)]));
+  const trainerOf = (x) => {
+    const tr = obj(x);
+    return typeof tr.key === "string" ? { key: tr.key, pExcl: specMap(tr.pExcl, (p) => Number.isFinite(p) && p >= 0 && p <= 1) } : null;
+  };
 
   for (const f of FUNDAMENTALS) {
     if (Array.isArray(snap.sel?.[f.key])) state.sel[f.key] = new Set(snap.sel[f.key].filter((o) => f.options.includes(o)));
@@ -267,6 +280,7 @@ function restore(snap) {
     .map((p) => ({ id: p.id, weight: Number.isFinite(p.weight) && p.weight >= 0 ? p.weight : 0, custom: p.custom === true }));
   state.manualExcl = new Set(list(snap.manualExcl).filter((id) => SPEC[id]));
   state.playstyle = answerMap(snap.playstyle, PLAYSTYLE_QS);
+  state.playstyleTrainer = trainerOf(snap.playstyleTrainer);
   for (const [id, saved] of Object.entries(obj(snap.texture))) {
     if (!CT[id]) continue;
     const t = textureOf(id);
@@ -274,8 +288,7 @@ function restore(snap) {
     t.overrides = answerMap(saved.overrides, PLAYSTYLE_QS);
     t.visited = saved.visited === true;
     t.skipped = saved.skipped === true;
-    const trainer = obj(saved.trainer);
-    t.trainer = typeof trainer.key === "string" ? { key: trainer.key, pExcl: specMap(trainer.pExcl, (p) => Number.isFinite(p) && p >= 0 && p <= 1) } : null;
+    t.trainer = trainerOf(saved.trainer);
     t.override = specMap(saved.override, (v) => typeof v === "boolean");
   }
   state.tiebreak = Object.fromEntries(Object.entries(obj(snap.tiebreak)).filter(([pair, w]) => pair.split("|").includes(w) && SPEC[w]));
@@ -395,6 +408,39 @@ function octyTally(notes) {
 }
 
 const answerText = (a) => [a.chosen.join(" / "), a.text.trim() && `“${a.text.trim()}”`].filter(Boolean).join(" + ") + (a.dealbreaker ? " · dealbreaker" : "");
+
+// Asks the trainer about `answers` for one page (stepId: "playstyle" or "ct:<id>"); `keep(trainer)` stores the verdict.
+async function askTrainer(stepId, contentType, answers, keep) {
+  const u = uiOf(stepId);
+  const specs = basePool();
+  const here = () => state.step === stepId;
+  u.error = null;
+  u.loading = true;
+  render();
+  try {
+    const pExcl = await judge(contentType, answers, specs.map((s) => s.id), (phase) => {
+      u.phase = phase;
+      if (here()) render();
+    });
+    keep({ key: trainerKey(answers, specs), pExcl });
+  } catch (e) {
+    if (!e.cancelled) u.error = e.message;
+  } finally {
+    u.loading = false;
+    u.phase = null;
+    if (here()) render();
+    else save();
+  }
+}
+
+// The trainer button for a page with notes, and the error of its last call.
+function trainerControls(stepId, { pending, ask }) {
+  const u = uiOf(stepId);
+  return {
+    button: el("button", { class: "primary", disabled: u.loading || !pending, onclick: ask }, ASK_LABEL[u.loading ? u.phase ?? "checking" : pending ? "idle" : "done"]),
+    error: u.error ? el("div", { class: "error" }, u.error, " ", el("button", { class: "mini", onclick: ask }, "Try again")) : null,
+  };
+}
 
 // ---------- views ----------
 
@@ -545,33 +591,40 @@ const VIEWS = {
 
   playstyle: () => {
     const specs = basePool();
-    const { excluded, fit } = localVerdict(effectiveAnswers(state.playstyle, {}, {}), specs);
+    const answers = effectiveAnswers(state.playstyle, {}, {});
+    const verdict = playstyleVerdict();
     const ctx = { pool: specs, answers: state.playstyle };
-    const answered = Object.values(state.playstyle).filter(isAnswered).length;
+    const answered = Object.keys(answers).length;
+    const written = Object.values(answers).some((a) => a.text.trim());
+    const ask = () => askTrainer("playstyle", "playstyle", answers, (trainer) => (state.playstyleTrainer = trainer));
+    const trainer = trainerControls("playstyle", { pending: verdict.trainerPending, ask });
     return [
       header("Playstyle", "spell_holy_magicalsentry",
         el("p", { class: "muted" }, "Answered once, used for every content type — you can still change an answer for one content type on its page. Leave blank anything you don't mind.")),
       el("div", { class: "parchment" },
-        el("p", { class: "parchment-intro" }, "Answers are preferences: they rank specs using octy's ratings. Tick “Dealbreaker” only when you feel strongly — then specs octy rates ✗ are ruled out everywhere."),
+        el("p", { class: "parchment-intro" }, "Answers are preferences: they rank specs using octy's ratings. Tick “Dealbreaker” only when you feel strongly — then specs octy rates ✗ are ruled out everywhere. Notes are read once by the trainer and apply to every content type."),
         questionsToAsk(PLAYSTYLE, specs, state.playstyle).map((it) => questionField(state.playstyle, it.q, ctx)),
       ),
       el("div", { class: "actions" },
-        el("span", { class: "counter" }, `${specs.length - excluded.size} of ${specs.length} specs left`),
-        el("span", { class: "muted small" }, answered ? `${answered} answered` : "Nothing answered yet"),
+        el("span", { class: "counter" }, `${verdict.kept.size} of ${specs.length} specs left`),
+        written ? trainer.button : el("span", { class: "muted small" }, answered ? `${answered} answered` : "Nothing answered yet"),
       ),
+      trainer.error,
+      written && verdict.trainerPending ? el("p", { class: "muted small" }, "Your notes aren't read yet — showing octy's ratings only.") : null,
       el("div", { class: "spec-grid" }, specs
         .slice()
-        .sort((a, b) => (fit[b.id] ?? -1) - (fit[a.id] ?? -1))
-        .map((s) => specTile(s, { off: excluded.has(s.id), note: fitNote(fit[s.id]) }))),
+        .sort((a, b) => Number(verdict.kept.has(b.id)) - Number(verdict.kept.has(a.id)) || (verdict.fit[b.id] ?? -1) - (verdict.fit[a.id] ?? -1))
+        .map((s) => specTile(s, { off: !verdict.kept.has(s.id), note: fitNote(verdict.fit[s.id]) }))),
     ];
   },
 
   review: () => {
     const flags = [];
+    if (playstyleVerdict().trainerPending) flags.push(el("li", {}, "Playstyle has notes the trainer hasn't read yet."));
     for (const p of state.picked) {
       const t = textureOf(p.id);
       const label = CT[p.id].label;
-      if (t.skipped) continue;
+      if (t.skipped || !isScored(CT[p.id])) continue;
       const v = verdictOf(p.id);
       if (!v.kept.size) flags.push(el("li", {}, `Nothing survives in ${label} — loosen a dealbreaker there or on Playstyle.`));
       if (v.trainerPending) flags.push(el("li", {}, `${label} has notes the trainer hasn't read yet.`));
@@ -595,23 +648,28 @@ const VIEWS = {
         flags.push(el("li", {}, `“${q}” differs between ${list.map((x) => `${x.label} (${x.text})`).join(" and ")} — fine if intended.`));
       }
     }
+    const answerList = (entries) => el("dl", {}, entries.map(([q, a, note]) => [el("dt", {}, q, note ? el("small", { class: "muted" }, ` · ${note}`) : null), el("dd", {}, a)]));
+    const playstyle = Object.entries(effectiveAnswers(state.playstyle, {}, {}));
     return [
-      header("Review", "spell_holy_auraoflight", el("p", { class: "muted" }, "Everything you answered, per content type. Click a content type to change it.")),
+      header("Review", "spell_holy_auraoflight", el("p", { class: "muted" }, "Your Playstyle answers, then what each content type changes or adds. Click a step to change it.")),
       flags.length ? el("div", { class: "warn" }, el("strong", {}, "Worth a look"), el("ul", { class: "flags" }, flags)) : null,
+      el("div", { class: "panel review" },
+        el("h3", {}, el("button", { class: "mini", onclick: () => go("playstyle") }, "Playstyle"), " every content type"),
+        playstyle.length ? answerList(playstyle.map(([q, a]) => [q, answerText(a)])) : el("p", { class: "muted" }, "No answers."),
+      ),
       state.picked.map((p) => {
         const t = textureOf(p.id);
-        const answers = answersFor(p.id);
-        const entries = Object.entries(answers);
+        const changed = Object.entries(t.overrides)
+          .filter(([q, a]) => answerText(a) !== answerText(state.playstyle[q] ?? emptyAnswer()))
+          .map(([q, a]) => [q, isAnswered(a) ? answerText(a) : "no answer", `changed from Playstyle (${isAnswered(state.playstyle[q]) ? answerText(state.playstyle[q]) : "no answer"})`]);
+        const own = Object.entries(t.answers).filter(([, a]) => isAnswered(a)).map(([q, a]) => [q, answerText(a)]);
         return el("div", { class: "panel review" },
           el("h3", {}, el("button", { class: "mini", onclick: () => go(`ct:${p.id}`) }, CT[p.id].label), ` ×${p.weight}`,
             el("span", { class: `badge ${statusOf(p.id)}` }, STATUS_LABEL[statusOf(p.id)])),
           t.skipped ? el("p", { class: "muted" }, "Skipped — scores 0.")
-            : entries.length
-              ? el("dl", {}, entries.map(([q, a]) => [
-                  el("dt", {}, q, PLAYSTYLE_QS.has(q) ? el("small", { class: "muted" }, q in t.overrides ? " · changed for this content" : " · Playstyle") : null),
-                  el("dd", {}, answerText(a)),
-                ]))
-              : el("p", { class: "muted" }, "No answers — every spec in your pool survives here."),
+            : !isScored(CT[p.id]) ? el("p", { class: "muted" }, "Nothing to ask here yet — doesn't change your scores.")
+            : changed.length || own.length ? answerList([...changed, ...own])
+            : el("p", { class: "muted" }, "Nothing changed or added — your Playstyle answers decide this one."),
         );
       }),
     ];
@@ -621,6 +679,7 @@ const VIEWS = {
     const ranked = state.picked.map((p) => ({ ...p, status: statusOf(p.id) }));
     const stepLinks = (list) => list.map((p) => el("button", { class: "mini", onclick: () => go(`ct:${p.id}`) }, CT[p.id].label));
     const counted = ranked.filter((p) => p.status === "evaluated" || p.status === "stale");
+    const startOverButton = el("div", { class: "start-over" }, el("button", { onclick: startOver }, "Start over"));
     if (!counted.length) {
       return [
         header("Results", "inv_misc_coin_01"),
@@ -629,14 +688,24 @@ const VIEWS = {
           el("p", {}, "Open at least one content type to see your main and alt candidates."),
           el("div", { class: "step-links" }, stepLinks(ranked)),
         ),
+        startOverButton,
       ];
     }
-    const stepScores = ranked.map((p) => ({ id: p.id, weight: p.weight, verdict: p.status === "pending" || p.status === "skipped" ? null : verdictOf(p.id) }));
+    const stepScores = ranked.map((p) => ({ id: p.id, weight: p.weight, verdict: counted.includes(p) ? verdictOf(p.id) : null }));
     const rows = scoreSpecs(stepScores, basePool());
     const scored = rows.filter((r) => r.points > 0);
     const top = scored.filter((r) => sameScore(r, scored[0]));
-    const { champion, next } = top.length > 1 ? knockout(top.map((r) => r.spec.id), state.tiebreak) : { champion: top[0]?.spec.id, next: null };
-    // Alts: the rest of a tie for main, then the next two score groups.
+    // The "which would you rather play?" picker is optional, and only offered for a small tie: picking through a
+    // dozen equal specs says nothing the answers didn't.
+    const MAX_TIE_PICKER = 6;
+    const canPick = top.length > 1 && top.length <= MAX_TIE_PICKER;
+    const ko = canPick ? knockout(top.map((r) => r.spec.id), state.tiebreak) : null;
+    const champion = top.length === 1 ? top[0].spec.id : ko?.champion ?? null;
+    const mainRow = rows.find((r) => r.spec.id === champion);
+    // Unsettled tie: the tied specs share the top spot (up to MAX_TIE_PICKER cards; the rest are in the table).
+    const tied = mainRow ? [] : top.slice(0, MAX_TIE_PICKER);
+    // Alts: the rest of a settled tie, then the next two score groups; none under an unsettled big tie, where
+    // lower-scored cards would outrank tied specs left off the podium.
     const groups = [];
     for (const r of scored) {
       if (top.includes(r)) continue;
@@ -644,13 +713,12 @@ const VIEWS = {
       else groups.at(-1).push(r);
     }
     const MAX_ALTS = 4; // the rest of a big tie stays visible in the table
-    const alts = [...(champion ? top.filter((r) => r.spec.id !== champion) : []), ...groups.slice(0, 2).flat()].slice(0, MAX_ALTS);
-    const mainRow = rows.find((r) => r.spec.id === champion);
-    const tier = (r) => (r === mainRow ? "main" : alts.includes(r) ? "alt" : null);
+    const alts = top.length > MAX_TIE_PICKER && !mainRow ? [] : [...(mainRow ? top.filter((r) => r !== mainRow) : []), ...groups.slice(0, 2).flat()].slice(0, MAX_ALTS);
+    const tier = (r) => (r === mainRow || tied.includes(r) ? "main" : alts.includes(r) ? "alt" : null);
     const ordered = mainRow ? [mainRow, ...rows.filter((r) => r !== mainRow)] : rows;
     const pending = ranked.filter((p) => p.status === "pending");
     const unread = ranked.filter((p) => p.status === "stale");
-
+    const u = uiOf("results");
     const shareStatus = el("span", { class: "muted small" });
     const shareBox = el("div", { class: "share" },
       el("button", {
@@ -664,40 +732,58 @@ const VIEWS = {
       }, "Copy share link"),
       shareStatus,
     );
-    const pick = (a, b) => {
-      const pair = [a, b].sort();
-      return (winner) => {
-        state.tiebreak[pair.join("|")] = winner;
-        render();
-      };
+    const pick = (pair, winner) => {
+      state.tiebreak[[...pair].sort().join("|")] = winner;
+      render();
     };
-    const tieBreaker = next
-      ? el("div", { class: "panel tiebreak" },
-          el("h2", {}, `It's a tie between ${top.length} specs`),
-          el("p", { class: "muted" }, "Settle it: which would you rather play?"),
-          el("div", { class: "tiebreak-pair" }, next.map((id) =>
-            el("button", { class: "loot-choice", dataset: { spec: id }, onclick: () => pick(...next)(id) }, icon(SPEC[id].icon, "lg"), specLabel(SPEC[id])))),
-        )
-      : null;
+    const clearPicks = () => {
+      const ids = new Set(top.map((r) => r.spec.id));
+      for (const pair of Object.keys(state.tiebreak)) if (pair.split("|").every((id) => ids.has(id))) delete state.tiebreak[pair];
+      u.choosing = true;
+      render();
+    };
+    let tieNote = null;
+    if (top.length > MAX_TIE_PICKER) {
+      tieNote = el("div", { class: "panel tiebreak" },
+        el("p", {}, `${top.length} specs tie for main — nothing in your answers separates them yet. Answer more questions, tick a dealbreaker, or write a note for the trainer to narrow it down.`));
+    } else if (canPick && !mainRow) {
+      tieNote = el("div", { class: "panel tiebreak" },
+        u.choosing && ko.next
+          ? [
+              el("h2", {}, "Which would you rather play?"),
+              el("div", { class: "tiebreak-pair" }, ko.next.map((id) =>
+                el("button", { class: "loot-choice", dataset: { spec: id }, onclick: () => pick(ko.next, id) }, icon(SPEC[id].icon, "lg"), specLabel(SPEC[id])))),
+              el("button", { class: "mini", onclick: () => { u.choosing = false; render(); } }, "Not now"),
+            ]
+          : [
+              el("p", {}, `${top.length} specs tie for main.`),
+              el("button", { class: "primary", onclick: () => { u.choosing = true; render(); } }, "Tied — help me choose"),
+            ]);
+    } else if (canPick && mainRow) {
+      tieNote = el("p", { class: "muted small" }, `${specName(mainRow.spec)} won your tie-breaker over ${top.length - 1} tied spec${top.length > 2 ? "s" : ""}. `,
+        el("button", { class: "mini", onclick: clearPicks }, "Choose again"));
+    }
 
     return [
       header("Results", "inv_misc_coin_01", shareBox),
       pending.length ? el("div", { class: "warn" }, "Not visited yet (scores 0): ", el("span", { class: "step-links" }, stepLinks(pending))) : null,
       unread.length ? el("div", { class: "warn" }, "Notes the trainer hasn't read — these use octy's ratings only: ", el("span", { class: "step-links" }, stepLinks(unread))) : null,
-      tieBreaker,
-      !next && (mainRow || alts.length)
-        ? el("div", { class: "podium" }, [mainRow, ...alts].filter(Boolean).map((r) =>
-            el("div", { class: `loot ${tier(r)}`, dataset: { spec: r.spec.id } },
-              icon(r.spec.icon, "xl"),
-              el("div", { class: "loot-text" },
-                el("div", { class: "loot-tier" }, tier(r) === "main" ? "Main candidate" : "Alt candidate"),
-                specLabel(r.spec),
-                el("div", { class: "muted small" }, r.spec.role, r.fit !== null ? ` · fit ${pct(r.fit)}` : ""),
-              ),
-              el("div", { class: "loot-pts" }, r.points, el("small", {}, "pts")),
-            ),
-          ))
+      playstyleVerdict().trainerPending
+        ? el("div", { class: "warn" }, "Your Playstyle notes aren't read yet — octy's ratings only: ", el("span", { class: "step-links" }, el("button", { class: "mini", onclick: () => go("playstyle") }, "Playstyle")))
         : null,
+      el("div", { class: "podium" }, [mainRow, ...tied, ...alts].filter(Boolean).map((r) =>
+        el("div", { class: `loot ${tier(r)}`, dataset: { spec: r.spec.id } },
+          icon(r.spec.icon, "xl"),
+          el("div", { class: "loot-text" },
+            el("div", { class: "loot-tier" }, r === mainRow ? "Main candidate" : tied.includes(r) ? "Tied for main" : "Alt candidate"),
+            specLabel(r.spec),
+            el("div", { class: "muted small" }, r.spec.role, r.fit !== null ? ` · fit ${pct(r.fit)}` : ""),
+          ),
+          el("div", { class: "loot-pts" }, r.points, el("small", {}, "pts")),
+        ),
+      )),
+      tied.length < top.length && !mainRow ? el("p", { class: "muted small" }, `+${top.length - tied.length} more tied — see the table.`) : null,
+      tieNote,
       el("div", { class: "panel table-wrap" },
         el("table", { class: "results" },
           el("thead", {}, el("tr", {},
@@ -713,6 +799,7 @@ const VIEWS = {
               r.cells.map((c, j) =>
                 el("td", { class: "cell" },
                   ranked[j].status === "skipped" ? el("span", { class: "muted small" }, "skipped")
+                    : ranked[j].status === "unscored" ? el("span", { class: "muted small" }, "not scored")
                     : ranked[j].status === "pending" ? el("span", { class: "muted" }, "—")
                     : [el("span", { class: c.ok ? "ok" : "bad" }, c.ok ? "✓" : "✗"), " ", el("span", { class: "muted small" }, c.fit !== null ? `fit ${pct(c.fit)}` : "")],
                 ),
@@ -721,6 +808,7 @@ const VIEWS = {
           )),
         ),
       ),
+      startOverButton,
     ];
   },
 };
@@ -730,40 +818,39 @@ const VIEWS = {
 function renderTexture(ctId) {
   const ct = CT[ctId];
   const t = textureOf(ctId);
+  const stepId = `ct:${ctId}`;
   const weight = state.picked.find((p) => p.id === ctId).weight;
   const specs = basePool();
+  const head = header(ct.label, ct.icon,
+    el("div", { class: "head-meta" }, el("span", { class: "weight-pill" }, `weight ×${weight}`), el("span", { class: `badge ${statusOf(ctId)}` }, STATUS_LABEL[statusOf(ctId)])),
+    ct.examples.length ? el("div", { class: "examples-links" }, ct.examples.map((x) => watch(x.t, `${x.who}'s take`))) : null,
+  );
+  if (!isScored(ct)) return [head, ct.tip ? el("p", { class: "tip" }, ct.tip) : null];
+
   const answers = answersFor(ctId);
   const verdict = verdictOf(ctId);
-  const status = statusOf(ctId);
-  const written = Object.values(answers).some((a) => a.text.trim());
+  // Only this step's own notes (or Playstyle notes it changed) need a trainer call here; Playstyle notes are read once.
+  const { sharesPlaystyle, answers: trainerAnswers } = stepTrainerAnswers(state.playstyle, t.overrides, t.answers);
+  const written = Object.values(trainerAnswers).some((a) => a.text.trim());
+  const loading = uiOf(stepId).loading;
 
-  // Questions are judged against the specs still in play after the Playstyle dealbreakers.
-  const playstyleOnly = effectiveAnswers(state.playstyle, t.overrides, {});
-  const playstyleExcluded = localVerdict(playstyleOnly, specs).excluded;
-  const inPlay = specs.filter((s) => !playstyleExcluded.has(s.id));
+  // Questions are judged against the specs still in play after the Playstyle answers.
+  const playstyleKept = sharesPlaystyle ? playstyleVerdict().kept : judgeAnswers(effectiveAnswers(state.playstyle, t.overrides, {}), specs, null).kept;
+  const inPlay = specs.filter((s) => playstyleKept.has(s.id));
   const ctx = { pool: inPlay, answers };
 
-  const ask = async () => {
-    t.error = null;
+  const ask = () => askTrainer(stepId, ctId, trainerAnswers, (trainer) => {
+    t.trainer = trainer;
     t.override = {};
-    const here = () => state.step === `ct:${ctId}`;
-    t.loading = true;
-    render();
-    try {
-      const pExcl = await judge(ctId, answers, specs.map((s) => s.id), (phase) => {
-        t.phase = phase;
-        if (here()) render();
-      });
-      t.trainer = { key: trainerKey(answers, specs), pExcl };
-    } catch (e) {
-      if (!e.cancelled) t.error = e.message;
-    } finally {
-      t.loading = false;
-      t.phase = null;
-      if (here()) render();
-      else save();
-    }
-  };
+  });
+  const trainer = trainerControls(stepId, { pending: verdict.trainerPending, ask });
+
+  // Other content types that answered some of the same questions (the PvP types share theirs) can be copied over.
+  const ownQs = new Set(ct.items.map((it) => it.q).filter(Boolean));
+  const copySources = state.picked
+    .filter((p) => p.id !== ctId)
+    .map((p) => ({ label: CT[p.id].label, answers: Object.entries(textureOf(p.id).answers).filter(([q, a]) => ownQs.has(q) && isAnswered(a)) }))
+    .filter((x) => x.answers.some(([q, a]) => JSON.stringify(t.answers[q]) !== JSON.stringify(a)));
 
   const ownQuestions = questionsToAsk(ct.items, inPlay, answers);
   const overridden = PLAYSTYLE.filter((it) => it.q in t.overrides);
@@ -780,17 +867,27 @@ function renderTexture(ctId) {
         },
       }, `Change for ${ct.label}`));
   });
+  const intro = ownQuestions.length
+    ? `Questions for ${ct.label}, the ones that narrow your pool most first. Answers are preferences unless you tick “Dealbreaker”; anything you write is read by the trainer.`
+    : ct.favors
+      ? `octy's tip decides this one: only ${ct.favors.join(", ")} specs score here, on top of your Playstyle answers. Click a spec below to change that.`
+      : `No ${ct.label}-specific questions left for your pool — your Playstyle answers decide this one.`;
 
   return [
-    header(ct.label, ct.icon,
-      el("div", { class: "head-meta" }, el("span", { class: "weight-pill" }, `weight ×${weight}`), el("span", { class: `badge ${status}` }, STATUS_LABEL[status])),
-      ct.examples.length ? el("div", { class: "examples-links" }, ct.examples.map((x) => watch(x.t, `${x.who}'s take`))) : null,
-    ),
+    head,
     ct.tip ? el("p", { class: "tip" }, ct.tip) : null,
     el("div", { class: "parchment" },
-      ownQuestions.length
-        ? el("p", { class: "parchment-intro" }, `Questions for ${ct.label}, the ones that narrow your pool most first. Answers are preferences unless you tick “Dealbreaker”; anything you write is read by the trainer.`)
-        : el("p", { class: "parchment-intro" }, `No ${ct.label}-specific questions left for your pool — your Playstyle answers decide this one.`),
+      el("p", { class: "parchment-intro" }, intro),
+      copySources.length
+        ? el("div", { class: "copy-from" }, copySources.map((x) =>
+            el("button", {
+              class: "mini",
+              onclick: () => {
+                for (const [q, a] of x.answers) t.answers[q] = structuredClone(a);
+                render();
+              },
+            }, `Copy answers from ${x.label}`)))
+        : null,
       ownQuestions.map((it) => (it.hint ? el("p", { class: "hint" }, it.hint) : questionField(t.answers, it.q, ctx))),
       overridden.map((it) =>
         el("div", { class: "override" },
@@ -805,14 +902,10 @@ function renderTexture(ctId) {
     ),
     el("div", { class: "actions" },
       el("span", { class: "counter" }, `${verdict.kept.size} of ${specs.length} specs left`),
-      written
-        ? el("button", { class: "primary", disabled: t.loading || !verdict.trainerPending, onclick: ask }, ASK_LABEL[t.loading ? t.phase ?? "checking" : verdict.trainerPending ? "idle" : "done"])
-        : null,
-      el("button", { disabled: t.loading, onclick: () => { t.skipped = !t.skipped; render(); } }, t.skipped ? "Include this content type" : "Skip"),
+      written ? trainer.button : null,
+      el("button", { disabled: loading, onclick: () => { t.skipped = !t.skipped; render(); } }, t.skipped ? "Include this content type" : "Skip"),
     ),
-    t.error
-      ? el("div", { class: "error" }, t.error, " ", el("button", { class: "mini", onclick: ask }, "Try again"))
-      : null,
+    trainer.error,
     el("div", { class: "panel verdicts" },
       el("p", { class: "muted small" },
         verdict.pExcl ? "The trainer read your notes. Bar = P(excluded). " : written ? "Your notes aren't read yet — showing octy's ratings only. " : "Live from octy's ratings. ",

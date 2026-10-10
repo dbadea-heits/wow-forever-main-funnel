@@ -132,9 +132,9 @@ export const INTERVIEWS = [
       },
       roleplay: {
         answers: {
-          [RP_ESTABLISHED]: note("No."),
-          [RP_DETERMINES]: note("No, it's the other way around: my class and spec will determine my character."),
-          [RP_MATCH]: note("Yes, it matters that they match."),
+          [RP_ESTABLISHED]: pref("No"),
+          [RP_DETERMINES]: pref("No", "It's the other way around: my class and spec will determine my character."),
+          [RP_MATCH]: pref("Yes"),
           [RP_AZEROTH]: note("Horde more than Alliance, though Alliance is maybe on the table. I like Tauren and I really like the Skyborn, so no warlock or priest."),
           [RP_POSSIBLE]: note("Not a warrior or a mage. I'm not that interested in RPing a paladin, even a Forsaken one."),
         },

@@ -160,7 +160,7 @@ textarea:focus, input:focus { outline: 1px solid var(--gold-soft); }
 .dot { width: .6rem; height: .6rem; border-radius: 50%; background: #4a3c2a; flex: none; box-shadow: 0 0 0 1px #000; }
 .dot.evaluated { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
 .dot.stale { background: var(--warn); box-shadow: 0 0 6px var(--warn); }
-.dot.skipped { background: #777; }
+.dot.skipped, .dot.unscored { background: #777; }
 .nav-legend {
   display: grid; gap: .3rem;
   margin-top: 1rem; padding-top: .7rem;
@@ -168,7 +168,6 @@ textarea:focus, input:focus { outline: 1px solid var(--gold-soft); }
   font-size: .74rem; color: var(--muted);
 }
 .nav-legend div { display: flex; align-items: center; gap: .45rem; }
-.nav-reset { margin-top: auto; font-size: .78rem; padding: .3rem .6rem; color: var(--muted); }
 
 /* ---------- main column ---------- */
 
@@ -451,6 +450,7 @@ textarea:focus, input:focus { outline: 1px solid var(--gold-soft); }
 .table-wrap { overflow-x: auto; padding: .4rem .6rem; }
 .results { border-collapse: collapse; width: 100%; font-size: .9rem; }
 .results th, .results td { padding: .45rem .6rem; border-bottom: 1px solid rgba(138, 106, 53, .25); text-align: left; }
+.results .cell { white-space: nowrap; }
 .results th { font-family: var(--heading); font-weight: 700; color: var(--gold-soft); vertical-align: bottom; font-size: .85rem; }
 .results .ct-col .icon { margin-bottom: .2rem; }
 .results .num { font-family: var(--heading); font-weight: 700; color: var(--gold); font-size: 1.05rem; }
@@ -473,7 +473,9 @@ textarea:focus, input:focus { outline: 1px solid var(--gold-soft); }
 .review dt { color: var(--muted); }
 .review dd { margin: 0; }
 .tiebreak { text-align: center; }
-.tiebreak-pair { display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap; }
+.tiebreak-pair { display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap; margin-bottom: .6rem; }
+.start-over { display: flex; justify-content: flex-end; margin-top: 1.5rem; }
+.copy-from { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .8rem; }
 .loot-choice { display: flex; align-items: center; gap: .7rem; padding: .7rem 1.1rem; font-size: 1rem; }
 
 /* ---------- tooltip ---------- */
@@ -525,7 +527,6 @@ textarea:focus, input:focus { outline: 1px solid var(--gold-soft); }
   .nav-title { display: none; }
   .nav-item { flex: none; white-space: nowrap; padding: .3rem .55rem; font-size: .8rem; gap: .4rem; }
   .nav-legend { display: none; }
-  .nav-reset { flex: none; margin: 0; white-space: nowrap; }
 
   #app { padding: 1.2rem 1rem 2rem; }
   h1 { font-size: 1.5rem; }

@@ -10,13 +10,17 @@ const MAX_ANSWER_CHARS = 500;
 const MAX_TOKEN_CHARS = 2048;
 const UPSTREAM_TIMEOUT_MS = 60_000;
 
-const CT = Object.fromEntries(CONTENT_TYPES.map((c) => [c.id, c]));
+// The Playstyle page is judged once and its verdict reused by every content type.
+const STEPS = {
+  ...Object.fromEntries(CONTENT_TYPES.map((c) => [c.id, c])),
+  playstyle: { id: "playstyle", label: "General playstyle (every content type)", items: [] },
+};
 const SPEC = Object.fromEntries(SPECS.map((s) => [s.id, s]));
 
 const json = (status, body) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 
-// Request body: {contentType: id, answers: [{q, chosen: string[], text, dealbreaker}], specIds: string[], token}.
+// Request body: {contentType: id | "playstyle", answers: [{q, chosen: string[], text, dealbreaker}], specIds: string[], token}.
 // `q` must be one of the content type's questions or a Playstyle question; `chosen` must be its preset answers.
 // Returns {contentType, answers: {q: {chosen, text, dealbreaker}}, specs, token} or an error string.
 function parseJudgeRequest(raw) {
@@ -26,7 +30,7 @@ function parseJudgeRequest(raw) {
   } catch {
     return "body must be JSON";
   }
-  const ct = CT[body?.contentType];
+  const ct = Object.hasOwn(STEPS, body?.contentType) ? STEPS[body.contentType] : null;
   if (!ct) return "unknown contentType";
   const allowed = new Set([...ct.items, ...PLAYSTYLE].map((it) => it.q).filter(Boolean));
   const { answers: list, specIds } = body;

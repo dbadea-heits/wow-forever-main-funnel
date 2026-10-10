@@ -138,14 +138,18 @@ const RAID_ITEMS = [
   { q: "Any other considerations? Novelty?" },
 ];
 
+const RP_DETERMINES = "Will your RP character determine your class / spec?";
+const RP_MATTERS = "If not - does it matter to you that the class / spec you eventually choose matches your RP character?";
+
 // `showIf`: only asked once another question in the step has that answer.
+// `favors`: classes octy's tip recommends for a content type without questions; only they score there.
 export const CONTENT_TYPES = [
   { id: "pvp_1vx", icon: "ability_dualwield", label: "1vX PVP", examples: [{ who: "octy", t: 510 }], items: qs(PVP_Q) },
   { id: "pvp_small", icon: "achievement_arena_2v2_7", label: "Small group PVP", examples: [{ who: "Dqve", t: 2672 }], items: qs(PVP_Q) },
   { id: "pvp_large", icon: "inv_bannerpvp_02", label: "Large scale PVP", examples: [], items: qs(PVP_Q) },
   { id: "bgs", icon: "inv_misc_rune_07", label: "BGs", examples: [{ who: "octy", t: 711 }, { who: "Dqve", t: 2390 }, { who: "Theo", t: 3308 }],
     items: qs([...PVP_Q, "Do you want to be expected to flag carry?", "Do you want to be expected to defend a base?"]) },
-  { id: "ganking", icon: "ability_rogue_ambush", label: "Ganking/griefing", examples: [], tip: "octy's sheet: just roll Rogue, or Priest, or Druid.", items: [] },
+  { id: "ganking", icon: "ability_rogue_ambush", label: "Ganking/griefing", examples: [], tip: "octy's sheet: just roll Rogue, or Priest, or Druid.", favors: ["Rogue", "Priest", "Druid"], items: [] },
   { id: "dungeons", icon: "inv_misc_key_03", label: "Dungeons", examples: [{ who: "Osa", t: 1773 }, { who: "Dqve", t: 2768 }, { who: "Theo", t: 3244 }],
     items: qs([
       "Do you care more about doing maximum personal damage, or increasing the group's damage?",
@@ -156,7 +160,7 @@ export const CONTENT_TYPES = [
     ]) },
   { id: "raid_pug", icon: "inv_misc_head_dragon_01", label: "Raiding in PUGs", examples: [{ who: "octy", t: 792 }], items: RAID_ITEMS },
   { id: "raid_guild", icon: "inv_misc_tabardpvp_01", label: "Raiding in a Guild", examples: [{ who: "Theo", t: 3048 }], items: RAID_ITEMS },
-  { id: "speedrun", icon: "spell_nature_swiftness", label: "Speedrunning", examples: [], tip: "octy's sheet: wait for the tierlists to come out, and align with your raid.", items: [] },
+  { id: "speedrun", icon: "spell_nature_swiftness", label: "Speedrunning", examples: [], tip: "octy's sheet: wait for the tierlists to come out, and align with your raid. Nothing to ask here yet, so it doesn't change your scores.", items: [] },
   { id: "leveling", icon: "inv_misc_book_09", label: "Leveling", examples: [{ who: "Osa", t: 1373 }],
     items: qs([
       "What have you already leveled to 60 before?",
@@ -176,23 +180,22 @@ export const CONTENT_TYPES = [
       "Any AOE grinding or just pure questing?",
       "How about dungeons - do you want to be able to heal/tank dungeons while leveling?",
       "Do you want to have hard saves/escapes, or are you ok dying to a serious mistake?",
-      "Planning to raid at 60?",
     ]) },
   { id: "roleplay", icon: "inv_misc_note_06", label: "Roleplay", examples: [{ who: "Osa", t: 1965 }],
     items: [
       { q: "Do you have an established RP character headed into WoW Forever?" },
-      { q: "Will your RP character determine your class / spec?" },
-      { q: "If so - what's your plan for your first Forever character?" },
-      { q: "If not - does it matter to you that the class / spec you eventually choose matches your RP character?" },
-      { hint: "If it doesn't - consider other texture analyses as a higher priority!" },
-      { q: "If it does - what part of Azeroth are you drawn to (Faction → Race)?" },
-      { q: "What kind of RP characters do you see possible, given your Faction / Race preference?" },
-      { q: "What alignment are you leaning towards for your first character? Do you want it to match their typical class / spec fantasy?" },
+      { q: RP_DETERMINES },
+      { q: "If so - what's your plan for your first Forever character?", showIf: { q: RP_DETERMINES, option: "Yes" } },
+      { q: RP_MATTERS, showIf: { q: RP_DETERMINES, option: "No" } },
+      { hint: "If it doesn't - consider other texture analyses as a higher priority!", showIf: { q: RP_MATTERS, option: "No" } },
+      { q: "If it does - what part of Azeroth are you drawn to (Faction → Race)?", showIf: { q: RP_MATTERS, option: "Yes" } },
+      { q: "What kind of RP characters do you see possible, given your Faction / Race preference?", showIf: { q: RP_MATTERS, option: "Yes" } },
+      { q: "What alignment are you leaning towards for your first character? Do you want it to match their typical class / spec fantasy?",
+        showIf: { q: RP_MATTERS, option: "Yes" } },
     ] },
   { id: "farming", icon: "inv_misc_coin_01", label: "Farming/professions", examples: [],
     items: [
-      { q: "Raw gold/kill-based farms?" },
-      { q: "Or Professions/Auction House?" },
+      { q: "Raw gold/kill-based farms, or Professions/Auction House?" },
       { q: "Do you want to min-max your farming efficiency?" },
       { q: "If so, from what perspective: movement? Downtime? Time to kill? Gather speed?",
         showIf: { q: "Do you want to min-max your farming efficiency?", option: "Yes, I want to play the BEST farming class" } },

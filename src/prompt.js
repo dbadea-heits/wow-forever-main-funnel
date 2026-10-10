@@ -17,7 +17,7 @@ export function buildRequest(contentType, answers, specs) {
     state: {
       // Shared rules live in the state, which is billed once per call; question instructions are billed per question.
       rules: [
-        "Each of `player_answers` has `chosen_options` (preset answers), `free_text`, or both, and a `strength`: 'dealbreaker' or 'preference'.",
+        "Each of `player_answers` has `chosen_options` (preset answers), `free_text`, or both. Preset answers have a `strength`: 'dealbreaker' or 'preference'; free text is judged on its own wording.",
         "`specs.<id>.expert_ratings` lists an expert's rating of that spec for the player's dealbreaker answers; dealbreakers it doesn't list rate the spec as a good match or not at all.",
         "Rule a spec out if a dealbreaker's rating is 'recommended to exclude', or if free text states a firm requirement or dislike that directly conflicts with the spec.",
         "Free text that qualifies a chosen option (for example, allowing an exception) takes precedence over the rating.",
@@ -26,9 +26,8 @@ export function buildRequest(contentType, answers, specs) {
       content_type: contentType.label,
       player_answers: entries.map(([q, a]) => ({
         question: q,
-        ...(a.chosen.length && { chosen_options: a.chosen }),
+        ...(a.chosen.length && { chosen_options: a.chosen, strength: a.dealbreaker ? "dealbreaker" : "preference" }),
         ...(a.text && { free_text: a.text }),
-        strength: a.dealbreaker ? "dealbreaker" : "preference",
       })),
       specs: Object.fromEntries(
         specs.map((s) => {

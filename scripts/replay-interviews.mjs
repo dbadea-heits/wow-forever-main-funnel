@@ -5,7 +5,8 @@
 //   --local  no trainer calls: steps with notes fall back to octy's ratings (marked "local")
 import { SPECS, PLAYSTYLE, CONTENT_TYPES, DEFAULT_WEIGHTS } from "../public/data.js";
 import {
-  EXCLUDE_THRESHOLD, effectiveAnswers, isMulti, optionsOf, localVerdict, trainerKey, stepVerdict, questionsToAsk, scoreSpecs, sameScore,
+  EXCLUDE_THRESHOLD, effectiveAnswers, isMulti, optionsOf, judgeAnswers, trainerKey, stepTrainerAnswers, stepVerdict, questionsToAsk,
+  scoreSpecs, sameScore, isScored,
 } from "../public/funnel.js";
 import { buildRequest } from "../src/prompt.js";
 import { INTERVIEWS } from "./interviews.mjs";
@@ -34,11 +35,14 @@ function checkAnswers(where, answers, allowed) {
   }
 }
 
-async function trainerFor(ct, answers, specs) {
+async function trainerFor(contentType, answers, specs) {
   if (LOCAL || !Object.values(answers).some((a) => a.text.trim())) return null;
-  const res = await api.jev(buildRequest(ct, answers, specs));
+  const res = await api.jev(buildRequest(contentType, answers, specs));
   return { key: trainerKey(answers, specs), pExcl: Object.fromEntries(Object.entries(res).map(([id, a]) => [id, a.noul])) };
 }
+
+// The Worker's stand-in content type for the Playstyle page.
+const PLAYSTYLE_STEP = { id: "playstyle", label: "General playstyle (every content type)", items: [] };
 
 async function replay(iv) {
   const f = iv.fundamentals;
@@ -53,13 +57,17 @@ async function replay(iv) {
   const hidden = Object.keys(iv.playstyle)
     .filter((q) => !questionsToAsk(PLAYSTYLE, base, without(iv.playstyle, q)).some((it) => it.q === q))
     .map((q) => ({ step: "Playstyle", q }));
+  // Playstyle notes are read once and the verdict reused by every content type, as on the site.
+  const playstyleAnswers = effectiveAnswers(iv.playstyle, {}, {});
+  const playstyleTrainer = await trainerFor(PLAYSTYLE_STEP, playstyleAnswers, base);
+  const playstyleKept = judgeAnswers(playstyleAnswers, base, playstyleTrainer).kept;
 
   const steps = [];
   for (const [rank, c] of iv.content.entries()) {
     const ct = CONTENT_TYPES.find((x) => x.id === c.id);
     if (!ct) throw new Error(`${iv.who}: unknown content type "${c.id}"`);
     const weight = c.weight ?? DEFAULT_WEIGHTS[Math.min(rank, DEFAULT_WEIGHTS.length - 1)];
-    if (c.skip) {
+    if (c.skip || !isScored(ct)) {
       steps.push({ ct, weight, verdict: null });
       continue;
     }
@@ -69,16 +77,19 @@ async function replay(iv) {
     checkAnswers(`${iv.who} ${c.id}`, own, new Set(ct.items.map((it) => it.q)));
     checkAnswers(`${iv.who} ${c.id} overrides`, overrides, PLAYSTYLE_QS);
 
-    // Same pool the step page judges its questions against: after the Playstyle dealbreakers.
-    const playstyleExcluded = localVerdict(effectiveAnswers(iv.playstyle, overrides, {}), base).excluded;
-    const inPlay = base.filter((x) => !playstyleExcluded.has(x.id));
+    // Same pool the step page judges its questions against: after the Playstyle answers.
+    const { sharesPlaystyle, answers: trainerAnswers } = stepTrainerAnswers(iv.playstyle, overrides, own);
+    const keptBefore = sharesPlaystyle ? playstyleKept : judgeAnswers(effectiveAnswers(iv.playstyle, overrides, {}), base, null).kept;
+    const inPlay = base.filter((x) => keptBefore.has(x.id));
     const answers = effectiveAnswers(iv.playstyle, overrides, own);
     for (const q of Object.keys(own)) {
       if (!questionsToAsk(ct.items, inPlay, without(answers, q)).some((it) => it.q === q)) hidden.push({ step: ct.label, q });
     }
 
-    const trainer = await trainerFor(ct, answers, base);
-    const verdict = stepVerdict({ answers, specs: base, trainer, override: s.override ?? {} });
+    const trainer = await trainerFor(ct, trainerAnswers, base);
+    const verdict = stepVerdict({
+      playstyle: iv.playstyle, playstyleTrainer, overrides, own, specs: base, trainer, override: s.override ?? {}, favors: ct.favors,
+    });
     steps.push({ ct, weight, verdict, video: iv.video.steps[c.id] });
   }
 

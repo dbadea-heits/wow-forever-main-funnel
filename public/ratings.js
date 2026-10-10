@@ -121,18 +121,9 @@ export const TEXTURE_OPTIONS = {
     "I need some decent outs": "XXXGGGGGGGGGGGGGXGGXXXXGGGXXX",
     "I don't want any hard saves": "GGGXXXXXXXXXXXXXGXXGGGGXXXGGG",
   },
-  "Planning to raid at 60?": {
-    "Yes": null,
-    "No": null,
-    "Not sure yet": null,
-  },
-  "Raw gold/kill-based farms?": {
-    "Yes, farming mobs for my gold": "GGGGGGXGGGGGGGGXGGGXGGGGGGXXG",
-    "No, profession/AH focus": "GGGGGGGGGGGGGGGGGGGGGGGGGGGGG",
-  },
-  "Or Professions/Auction House?": {
-    "Yes, profession/AH focus": "GGGGGGGGGGGGGGGGGGGGGGGGGGGGG",
-    "No, farming mobs for my gold": "GGGGGGXGGGGGGGGXGGGXGGGGGGXXG",
+  "Raw gold/kill-based farms, or Professions/Auction House?": {
+    "Farming mobs for my gold": "GGGGGGXGGGGGGGGXGGGXGGGGGGXXG",
+    "Profession/AH focus": "GGGGGGGGGGGGGGGGGGGGGGGGGGGGG",
   },
   "Do you want to min-max your farming efficiency?": {
     "Yes, I want to play the BEST farming class": "XXXXXXXYXYXXYYGXXXXXGGXXXGXXY",
@@ -160,6 +151,10 @@ export const TEXTURE_OPTIONS = {
   [LEVELED[0]]: classOptions(),
   [LEVELED[1]]: classOptions(),
   [NEW_OR_REFINE]: { "New experience": null, "Refine my route": null },
+  // Roleplay branch questions: unrated, they only decide which follow-ups are asked.
+  "Do you have an established RP character headed into WoW Forever?": { Yes: null, No: null },
+  "Will your RP character determine your class / spec?": { Yes: null, No: null },
+  "If not - does it matter to you that the class / spec you eventually choose matches your RP character?": { Yes: null, No: null },
 };
 
 // Questions where several answers can be picked at once; every other question is single-choice.
