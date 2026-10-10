@@ -50,13 +50,13 @@ function humanToken() {
   return next;
 }
 
-// answers: strings aligned to the content type's items. Returns {specId: P(excluded)}.
-export async function judge(contentType, answers, specIds) {
+// answers: strings and choices: chosen preset answers, both aligned to the content type's items. Returns {specId: P(excluded)}.
+export async function judge(contentType, answers, choices, specIds) {
   const token = await humanToken();
   const res = await fetch("/api/judge", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ contentType, answers, specIds, token }),
+    body: JSON.stringify({ contentType, answers, choices, specIds, token }),
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.error ?? `Request failed (${res.status})`);

@@ -317,6 +317,19 @@ textarea:focus, input:focus { outline: 1px solid var(--gold-soft); }
 }
 .parchment textarea:focus { outline: 1px solid #7a4e17; background: rgba(255, 252, 240, .85); }
 .hint { font-style: italic; color: #7a5a2c; margin: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: .35rem; margin: .4rem 0 .45rem; }
+.parchment .chip {
+  font: 600 .82rem "Open Sans", system-ui, sans-serif;
+  letter-spacing: 0;
+  padding: .25rem .65rem;
+  color: var(--parchment-ink);
+  background: rgba(255, 250, 235, .45);
+  border: 1px solid #a98450;
+  border-radius: 999px;
+  box-shadow: none; text-shadow: none;
+}
+.parchment .chip:hover { background: rgba(255, 252, 240, .85); }
+.parchment .chip.on { color: #fff3c4; background: #7a4e17; border-color: #5c3a10; }
 .actions { display: flex; gap: .6rem; margin: 1rem 0; }
 
 .badge {
@@ -358,6 +371,8 @@ textarea:focus, input:focus { outline: 1px solid var(--gold-soft); }
 .verdict.excluded .spec-name { opacity: .5; text-decoration: line-through; }
 .verdict.excluded .icon { filter: grayscale(1) brightness(.6); }
 .verdict .badge { justify-self: start; }
+.verdict-name { display: flex; flex-direction: column; min-width: 0; }
+.octy-tally { font-size: .72rem; color: var(--warn); }
 /* WoW cast-bar style */
 .bar { height: .6rem; background: #0b0805; border: 1px solid #000; border-radius: 3px; box-shadow: 0 0 0 1px #4a3c2a; overflow: hidden; }
 .bar span { display: block; height: 100%; background: linear-gradient(180deg, #ff6b4a, #b3200f); }

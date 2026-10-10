@@ -1,10 +1,11 @@
 import { DurableObject } from "cloudflare:workers";
 import { SPECS, CONTENT_TYPES } from "../public/data.js";
+import { TEXTURE_OPTIONS } from "../public/ratings.js";
 import { buildRequest } from "./prompt.js";
 
 const UPSTREAM = "https://api.typesafe.ai/v1/systemone";
 const SITEVERIFY = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
-const MAX_BODY_BYTES = 34_000; // 14 answers × 500 chars, worst-case JSON escaping, spec ids, Turnstile token
+const MAX_BODY_BYTES = 40_000; // 14 answers × 500 chars, worst-case JSON escaping, chosen preset answers, spec ids, Turnstile token
 const MAX_ANSWER_CHARS = 500;
 const MAX_TOKEN_CHARS = 2048;
 const UPSTREAM_TIMEOUT_MS = 60_000;
@@ -15,8 +16,9 @@ const SPEC = Object.fromEntries(SPECS.map((s) => [s.id, s]));
 const json = (status, body) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 
-// Request body: {contentType: id, answers: string[] aligned to CONTENT_TYPES[].items, specIds: string[], token: Turnstile token}.
-// Returns {contentType, answers: [{q, answer}], specs, token} or an error string.
+// Request body: {contentType: id, answers: string[] and choices: string[][] (chosen preset answers), both aligned to
+// CONTENT_TYPES[].items, specIds: string[], token: Turnstile token}.
+// Returns {contentType, answers: [{q, answer, chosen}], specs, token} or an error string.
 function parseJudgeRequest(raw) {
   let body;
   try {
@@ -26,14 +28,20 @@ function parseJudgeRequest(raw) {
   }
   const ct = CT[body?.contentType];
   if (!ct) return "unknown contentType";
-  const { answers, specIds } = body;
+  const { answers, choices, specIds } = body;
   if (!Array.isArray(answers) || answers.length !== ct.items.length) return "answers must align with the content type's items";
   if (!answers.every((a) => typeof a === "string" && a.length <= MAX_ANSWER_CHARS)) return `answers must be strings of at most ${MAX_ANSWER_CHARS} chars`;
+  if (!Array.isArray(choices) || choices.length !== ct.items.length) return "choices must align with the content type's items";
+  const isPreset = (i, a) => typeof a === "string" && Object.hasOwn(TEXTURE_OPTIONS[ct.items[i].q] ?? {}, a);
+  if (!choices.every((c, i) => Array.isArray(c) && new Set(c).size === c.length && c.every((a) => isPreset(i, a))))
+    return "choices must be unique preset answers of their question";
   if (!Array.isArray(specIds) || specIds.length === 0 || new Set(specIds).size !== specIds.length || !specIds.every((id) => SPEC[id]))
     return "specIds must be a non-empty list of unique known spec ids";
   if (typeof body.token !== "string" || !body.token || body.token.length > MAX_TOKEN_CHARS) return "missing human check token";
-  const qa = ct.items.map((it, i) => ({ q: it.q, answer: answers[i] })).filter((a) => a.q);
-  if (!qa.some((a) => a.answer.trim())) return "no answers given";
+  const qa = ct.items
+    .map((it, i) => ({ q: it.q, answer: answers[i].trim(), chosen: choices[i] }))
+    .filter((a) => a.q && (a.answer || a.chosen.length));
+  if (!qa.length) return "no answers given";
   return { contentType: ct, answers: qa, specs: specIds.map((id) => SPEC[id]), token: body.token };
 }
 

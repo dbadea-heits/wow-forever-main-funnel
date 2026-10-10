@@ -1,5 +1,6 @@
 import { VIDEO_URL, VIDEO_TITLE, CHANNEL, EXAMPLES, CLASSES, SPECS, FUNDAMENTALS, CONTENT_TYPES, DEFAULT_WEIGHTS } from "./data.js";
 import { judge, EXCLUDE_THRESHOLD } from "./jev.js";
+import { TEXTURE_OPTIONS, octyRatings } from "./ratings.js";
 
 const CT = Object.fromEntries(CONTENT_TYPES.map((c) => [c.id, c]));
 const SPEC = Object.fromEntries(SPECS.map((s) => [s.id, s]));
@@ -9,7 +10,7 @@ const state = {
   sel: Object.fromEntries(FUNDAMENTALS.map((f) => [f.key, new Set(f.options)])),
   picked: [], // [{id, weight}] in rank order
   manualExcl: new Set(),
-  texture: {}, // ctId -> {answers: string[], status, pExcl, override, error, loading}
+  texture: {}, // ctId -> {answers: string[], choices: string[][], status, pExcl, override, error, loading}
 };
 
 // ---------- derived state ----------
@@ -23,6 +24,7 @@ const basePool = () => pool().filter((s) => !state.manualExcl.has(s.id));
 function textureOf(ctId) {
   return (state.texture[ctId] ??= {
     answers: CT[ctId].items.map(() => ""),
+    choices: CT[ctId].items.map(() => []), // chosen preset answers (octy's dropdowns) per item
     status: "pending",
     pExcl: {},
     override: {},
@@ -390,11 +392,18 @@ function renderTexture(ctId) {
   const t = textureOf(ctId);
   const weight = state.picked.find((p) => p.id === ctId).weight;
   const badge = el("span", { class: `badge ${t.status}` }, STATUS_LABEL[t.status]);
+  const markStale = () => {
+    if (t.status !== "evaluated") return;
+    t.status = "stale";
+    badge.className = "badge stale";
+    badge.textContent = STATUS_LABEL.stale;
+    nav.querySelector(".nav-item.active .dot").className = "dot stale";
+  };
 
   const ask = async () => {
     t.error = null;
     t.override = {};
-    if (!t.answers.some((a) => a.trim())) {
+    if (!t.answers.some((a) => a.trim()) && !t.choices.some((c) => c.length)) {
       t.pExcl = {};
       t.status = "evaluated";
       return render();
@@ -402,7 +411,7 @@ function renderTexture(ctId) {
     t.loading = true;
     render();
     try {
-      t.pExcl = await judge(ctId, t.answers, basePool().map((s) => s.id));
+      t.pExcl = await judge(ctId, t.answers, t.choices, basePool().map((s) => s.id));
       t.status = "evaluated";
     } catch (e) {
       t.error = e.message;
@@ -412,6 +421,48 @@ function renderTexture(ctId) {
     }
   };
 
+  // octy's narrow-match (Y) and exclude (X) ratings of a spec for the chosen preset answers.
+  const octyNotes = (s) =>
+    ct.items.flatMap((it, i) =>
+      t.choices[i].flatMap((opt) => {
+        const r = octyRatings(it.q, opt)[s.id];
+        return r === "X" || r === "Y" ? [{ r, text: `${it.q} → ${opt}` }] : [];
+      }),
+    );
+
+  const textarea = (i, placeholder) =>
+    el("textarea", {
+      rows: 2,
+      value: t.answers[i],
+      placeholder,
+      oninput: (e) => {
+        t.answers[i] = e.target.value;
+        markStale();
+      },
+    });
+
+  const question = (it, i) => {
+    const options = TEXTURE_OPTIONS[it.q];
+    if (!options) return el("label", { class: "q" }, el("span", {}, it.q), textarea(i));
+    return el("div", { class: "q" }, el("span", {}, it.q),
+      el("div", { class: "chips" }, Object.keys(options).map((opt) =>
+        el("button", {
+          class: `chip${t.choices[i].includes(opt) ? " on" : ""}`,
+          "aria-pressed": String(t.choices[i].includes(opt)),
+          onclick: (e) => {
+            const chosen = t.choices[i];
+            const at = chosen.indexOf(opt);
+            if (at === -1) chosen.push(opt);
+            else chosen.splice(at, 1);
+            e.currentTarget.classList.toggle("on", at === -1);
+            e.currentTarget.setAttribute("aria-pressed", String(at === -1));
+            markStale();
+          },
+        }, opt))),
+      textarea(i, "Add detail (optional)"),
+    );
+  };
+
   return [
     header(ct.label, ct.icon,
       el("div", { class: "head-meta" }, el("span", { class: "weight-pill" }, `weight ×${weight}`), badge),
@@ -419,25 +470,8 @@ function renderTexture(ctId) {
     ),
     ct.tip ? el("p", { class: "tip" }, ct.tip) : null,
     el("div", { class: "parchment" },
-      el("p", { class: "parchment-intro" }, "Answer what you have opinions on; leave the rest blank. The trainer only turns away specs that clash with what you write."),
-      ct.items.map((it, i) =>
-        it.hint
-          ? el("p", { class: "hint" }, it.hint)
-          : el("label", { class: "q" }, el("span", {}, it.q),
-              el("textarea", {
-                rows: 2,
-                value: t.answers[i],
-                oninput: (e) => {
-                  t.answers[i] = e.target.value;
-                  if (t.status === "evaluated") {
-                    t.status = "stale";
-                    badge.className = "badge stale";
-                    badge.textContent = STATUS_LABEL.stale;
-                    nav.querySelector(".nav-item.active .dot").className = "dot stale";
-                  }
-                },
-              })),
-      ),
+      el("p", { class: "parchment-intro" }, "Answer what you have opinions on; leave the rest blank. Pick any of octy's preset answers that fit and add detail in your own words — the trainer weighs both and only turns away specs that clash with them."),
+      ct.items.map((it, i) => (it.hint ? el("p", { class: "hint" }, it.hint) : question(it, i))),
     ),
     el("div", { class: "actions" },
       el("button", { class: "primary", disabled: t.loading, onclick: ask }, t.loading ? "The trainer ponders…" : "Consult the Trainer"),
@@ -446,7 +480,7 @@ function renderTexture(ctId) {
     t.error ? el("div", { class: "error" }, t.error) : null,
     t.status === "evaluated" || t.status === "stale"
       ? el("div", { class: "panel verdicts" },
-          el("p", { class: "muted small" }, "Bar = P(excluded). Click a spec to override the trainer."),
+          el("p", { class: "muted small" }, "Bar = P(excluded). ✗/~ = octy's exclude / narrow-match ratings for your preset answers. Click a spec to override the trainer."),
           basePool().map((s) => {
             const ok = survived(t, s.id);
             const p = t.pExcl[s.id];
@@ -456,7 +490,7 @@ function renderTexture(ctId) {
               onclick: () => { t.override[s.id] = !ok; render(); },
             },
               icon(s.icon, "sm"),
-              specLabel(s),
+              el("span", { class: "verdict-name" }, specLabel(s), octyTally(octyNotes(s))),
               el("span", { class: "bar" }, el("span", { style: `width:${(p ?? 0) * 100}%` })),
               el("span", { class: "pct" }, pct(p)),
               el("span", { class: `badge ${ok ? "kept" : "excluded"}` }, ok ? "kept" : "excluded", s.id in t.override ? " (override)" : ""),
@@ -465,6 +499,14 @@ function renderTexture(ctId) {
         )
       : null,
   ];
+}
+
+function octyTally(notes) {
+  if (!notes.length) return null;
+  const n = (r) => notes.filter((x) => x.r === r).length;
+  const parts = [n("X") && `${n("X")} ✗`, n("Y") && `${n("Y")} ~`].filter(Boolean);
+  const title = notes.map((x) => `${x.r === "X" ? "✗ exclude" : "~ narrow"}: ${x.text}`).join("\n");
+  return el("span", { class: "octy-tally", title }, `octy ${parts.join(" ")}`);
 }
 
 render();
