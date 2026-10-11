@@ -19,10 +19,10 @@ const q = (prefix) => {
   return hits[0];
 };
 const list = (chosen) => (chosen === undefined ? [] : [chosen].flat());
-const deal = (chosen, text = "") => ({ chosen: list(chosen), text, dealbreaker: true });
-const pref = (chosen, text = "") => ({ chosen: list(chosen), text, dealbreaker: false });
-const note = (text) => ({ chosen: [], text, dealbreaker: false });
-const blank = () => ({ chosen: [], text: "", dealbreaker: false });
+const deal = (chosen, text = "") => ({ chosen: list(chosen), text, dealbreaker: true, spare: [] });
+const pref = (chosen, text = "") => ({ chosen: list(chosen), text, dealbreaker: false, spare: [] });
+const note = (text) => ({ chosen: [], text, dealbreaker: false, spare: [] });
+const blank = () => ({ chosen: [], text: "", dealbreaker: false, spare: [] });
 
 const DOT = q("Do you want your character to be dot/hot");
 const SHAPESHIFT = q("How do you feel about Shapeshifting");

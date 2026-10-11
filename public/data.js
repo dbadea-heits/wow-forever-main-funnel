@@ -29,65 +29,67 @@ export const CLASSES = {
 };
 
 // icon: Wowhead icon name, stored locally as assets/icons/<icon>.jpg.
+// unproven: why a spec is untested (new in WoW Forever); shown as a badge wherever it's recommended.
 export const SPECS = [
   { id: "warrior_arms", icon: "ability_warrior_savageblow", cls: "Warrior", spec: "Arms", range: ["Melee"], dmg: "Physical", role: "Pure DPS",
     traits: "Plate, two-hander brute strength; rage (no mana); Mortal Strike healing reduction; little self-heal (Victory Rush); low mobility, gets kited; eats a lot while leveling; can respec tank; weak solo/1vX PvP without a healer" },
   { id: "warrior_fury", icon: "ability_warrior_innerrage", cls: "Warrior", spec: "Fury", range: ["Melee"], dmg: "Physical", role: "Pure DPS",
-    traits: "Dual-wield brute strength; rage; top raid melee damage, direct damage; weak in PvP; no self-heal; leveling downtime; can respec tank" },
+    traits: "Plate; dual-wield brute strength; rage; top raid melee damage, direct damage; weak in PvP; no self-heal; leveling downtime; can respec tank" },
   { id: "warrior_prot", icon: "ability_warrior_defensivestance", cls: "Warrior", spec: "Protection", range: ["Melee"], dmg: "Physical", role: "Tank",
     traits: "Plate and shield main tank; rage; poor in PvP and solo questing; no pet, no shapeshift" },
   { id: "rogue_assassination", icon: "ability_rogue_eviscerate", cls: "Rogue", spec: "Assassination", range: ["Melee"], dmg: "Physical", role: "Pure DPS",
-    traits: "Dexterous; energy/combo points (no mana); stealth; stuns (Cheap Shot, Kidney Shot); poisons; CC-and-reset style; strong escapes (Vanish, Sprint); no self-heal; cannot tank or heal" },
+    traits: "Leather; dexterous; energy/combo points (no mana); stealth; stuns (Cheap Shot, Kidney Shot); poisons; CC-and-reset style; strong escapes (Vanish, Sprint); no self-heal; cannot tank or heal" },
   { id: "rogue_combat", icon: "ability_backstab", cls: "Rogue", spec: "Combat", range: ["Melee"], dmg: "Physical", role: "Pure DPS",
-    traits: "Dexterous; energy; direct damage, Blade Flurry cleave; strong PvE melee DPS; stuns, Sprint; cannot tank or heal" },
+    traits: "Leather; dexterous; energy; direct damage, Blade Flurry cleave; strong PvE melee DPS; stuns, Sprint; cannot tank or heal" },
   { id: "rogue_subtlety", icon: "ability_stealth", cls: "Rogue", spec: "Subtlety", range: ["Melee"], dmg: "Physical", role: "Pure DPS",
-    traits: "Dexterous; energy; stealth opener burst, Preparation; strongest ganking/open-world opener; cannot tank or heal" },
+    traits: "Leather; dexterous; energy; stealth opener burst, Preparation; strongest ganking/open-world opener; cannot tank or heal" },
   { id: "paladin_holy", icon: "spell_holy_holybolt", cls: "Paladin", spec: "Holy", range: ["Melee", "Ranged"], dmg: "Spellcaster", role: "Healer",
     traits: "Plate healer; holy light magic; strong direct single-target/tank healing; mana; Divine Shield bubble; low mobility; blessings" },
   { id: "paladin_prot", icon: "spell_holy_devotionaura", cls: "Paladin", spec: "Protection", range: ["Melee"], dmg: "Combination", role: "Tank",
     traits: "Plate and shield; holy magic AoE threat; mana; self-heals; low mobility" },
   { id: "paladin_ret", icon: "spell_holy_auraoflight", cls: "Paladin", spec: "Retribution", range: ["Melee"], dmg: "Combination", role: "Hybrid",
-    traits: "Holy warrior: two-hander plus holy magic; mana; can off-heal and respec healer or tank; auras and blessings support; Hammer of Justice stun; bubble; low mobility, gets kited" },
+    traits: "Plate holy warrior: two-hander plus holy magic; mana; can off-heal and respec healer or tank; auras and blessings support; Hammer of Justice stun; bubble; low mobility, gets kited" },
   { id: "hunter_bm", icon: "ability_hunter_beasttaming", cls: "Hunter", spec: "Beast Mastery", range: ["Ranged"], dmg: "Physical", role: "Pure DPS",
-    traits: "Heavily pet-reliant; mana; easiest leveling, low downtime; kiting; Aspect of the Cheetah; no healing; cannot tank or heal" },
+    traits: "Mail; heavily pet-reliant; mana; easiest leveling, low downtime; kiting; Aspect of the Cheetah; no healing; cannot tank or heal" },
   { id: "hunter_mm", icon: "ability_marksmanship", cls: "Hunter", spec: "Marksmanship", range: ["Ranged"], dmg: "Physical", role: "Pure DPS",
-    traits: "Bow/gun direct damage (Aimed Shot); mana; kiting; Trueshot Aura raid support; can play without a pet (Lone Wolf); no healing" },
+    traits: "Mail; bow/gun direct damage (Aimed Shot); mana; kiting; Trueshot Aura raid support; can play without a pet (Lone Wolf); no healing" },
   { id: "hunter_survival", icon: "ability_hunter_swiftstrike", cls: "Hunter", spec: "Survival", range: ["Melee", "Ranged"], dmg: "Physical", role: "Pure DPS",
-    traits: "Traps, CC and defensive tools (Deterrence); kiting; uses a pet; some DoTs; no healing; cannot tank or heal" },
+    traits: "Mail; traps, CC and defensive tools (Deterrence); kiting; uses a pet; some DoTs; no healing; cannot tank or heal" },
   { id: "druid_balance", icon: "spell_nature_starfall", cls: "Druid", spec: "Balance", range: ["Ranged"], dmg: "Spellcaster", role: "Hybrid",
-    traits: "Must stay in Moonkin shapeshift form (gear hidden); nature and arcane magic; mana, can go OOM; mix of DoTs (Moonfire, Insect Swarm) and direct nukes; can off-heal and respec heal/tank; raid crit aura; roots; very mobile and slippery via forms; best flag carrier" },
+    traits: "Leather; must stay in Moonkin shapeshift form (gear hidden); nature and arcane magic; mana, can go OOM; mix of DoTs (Moonfire, Insect Swarm) and direct nukes; can off-heal and respec heal/tank; raid crit aura; roots; very mobile and slippery via forms; best flag carrier" },
   { id: "druid_bear", icon: "ability_racial_bearform", cls: "Druid", spec: "Feral - Bear", range: ["Melee"], dmg: "Combination", role: "Tank",
-    traits: "Permanent bear shapeshift tank; rage; can swap to cat DPS in the same gear; off-heals out of form; mobile via forms" },
+    traits: "Leather; permanent bear shapeshift tank; rage; can swap to cat DPS in the same gear; off-heals out of form; mobile via forms" },
   { id: "druid_cat", icon: "ability_druid_catform", cls: "Druid", spec: "Feral - Cat", range: ["Melee"], dmg: "Combination", role: "Hybrid",
-    traits: "Cat shapeshift; energy; bleed/DoT focused (Rake, Rip); stealth; can off-tank in bear and off-heal; slippery kiting, high mobility; Leader of the Pack crit aura" },
+    traits: "Leather; cat shapeshift; energy; bleed/DoT focused (Rake, Rip); stealth; can off-tank in bear and off-heal; slippery kiting, high mobility; Leader of the Pack crit aura" },
   { id: "druid_resto", icon: "spell_nature_healingtouch", cls: "Druid", spec: "Restoration", range: ["Ranged"], dmg: "Spellcaster", role: "Healer",
-    traits: "HoT-focused healer, stays mostly in caster form; nature magic; mana; mobile via forms; good flag carrier" },
+    traits: "Leather; HoT-focused healer, stays mostly in caster form; nature magic; mana; mobile via forms; good flag carrier" },
   { id: "shaman_elemental", icon: "spell_nature_lightning", cls: "Shaman", spec: "Elemental", range: ["Ranged"], dmg: "Spellcaster", role: "Hybrid",
     traits: "Nature/fire elemental magic (Lightning Bolt, Chain Lightning, Lava Burst); burst direct damage; mana; totems group support; can self-heal and off-heal; Ghost Wolf run speed; mail armor" },
   { id: "shaman_enh_tank", icon: "spell_nature_skinofearth", cls: "Shaman", spec: "Enhancement - Tank", range: ["Melee"], dmg: "Combination", role: "Tank",
-    traits: "New WoW Forever tank spec; shield plus elemental magic; mana; totems; likely no direct taunt; Ghost Wolf; novel" },
+    unproven: "New in WoW Forever: no one has tanked raids with it yet, and it likely has no direct taunt.",
+    traits: "Mail and shield; new WoW Forever tank spec; elemental magic; mana; totems; likely no direct taunt; Ghost Wolf; novel" },
   { id: "shaman_enh_dps", icon: "spell_nature_lightningshield", cls: "Shaman", spec: "Enhancement - DPS", range: ["Melee"], dmg: "Combination", role: "Hybrid",
-    traits: "Melee plus elemental magic (Windfury burst, Maelstrom Weapon instant Lightning Bolt); mana; totems group support; off-heal; Ghost Wolf" },
+    traits: "Mail; melee plus elemental magic (Windfury burst, Maelstrom Weapon instant Lightning Bolt); mana; totems group support; off-heal; Ghost Wolf" },
   { id: "shaman_resto", icon: "spell_nature_magicimmunity", cls: "Shaman", spec: "Restoration", range: ["Ranged"], dmg: "Spellcaster", role: "Healer",
-    traits: "Chain Heal raid healer; totems; nature/water magic; mana; Ghost Wolf" },
+    traits: "Mail; Chain Heal raid healer; totems; nature/water magic; mana; Ghost Wolf" },
   { id: "warlock_affliction", icon: "spell_shadow_deathcoil", cls: "Warlock", spec: "Affliction", range: ["Ranged"], dmg: "Spellcaster", role: "Pure DPS",
-    traits: "Shadow magic; DoT and drain \"rot\" playstyle; strong self-sustain (Drain Life, Siphon Life); uses a pet but not centrally; Fear CC; Life Tap mana; easy leveling; low mobility; cannot heal others or tank" },
+    traits: "Cloth; shadow magic; DoT and drain \"rot\" playstyle; strong self-sustain (Drain Life, Siphon Life); uses a pet but not centrally; Fear CC; Life Tap mana; easy leveling; low mobility; cannot heal others or tank" },
   { id: "warlock_demonology", icon: "spell_shadow_metamorphosis", cls: "Warlock", spec: "Demonology", range: ["Ranged"], dmg: "Spellcaster", role: "Pure DPS",
-    traits: "Heavily pet-reliant (Felguard); shadow magic; sustain through pet and Drain Life; easy leveling; low mobility" },
+    traits: "Cloth; heavily pet-reliant (Felguard); shadow magic; sustain through pet and Drain Life; easy leveling; low mobility" },
   { id: "warlock_destruction", icon: "spell_shadow_rainoffire", cls: "Warlock", spec: "Destruction", range: ["Ranged"], dmg: "Spellcaster", role: "Pure DPS",
-    traits: "Fire/shadow burst direct damage (Shadow Bolt, Conflagrate); little self-healing; turret-like, low mobility; minor pet" },
+    traits: "Cloth; fire/shadow burst direct damage (Shadow Bolt, Conflagrate); little self-healing; turret-like, low mobility; minor pet" },
   { id: "mage_arcane", icon: "spell_holy_magicalsentry", cls: "Mage", spec: "Arcane", range: ["Ranged"], dmg: "Spellcaster", role: "Pure DPS",
-    traits: "Arcane burst; heavy mana management; Blink, Polymorph CC; squishy, no self-heal; conjured food/water" },
+    traits: "Cloth; arcane burst; heavy mana management; Blink, Polymorph CC; squishy, no self-heal; conjured food/water" },
   { id: "mage_fire", icon: "spell_fire_firebolt02", cls: "Mage", spec: "Fire", range: ["Ranged"], dmg: "Spellcaster", role: "Pure DPS",
-    traits: "Fire crit burst direct damage; AoE; squishy, no self-heal; Blink" },
+    traits: "Cloth; fire crit burst direct damage; AoE; squishy, no self-heal; Blink" },
   { id: "mage_frost", icon: "spell_frost_frostbolt02", cls: "Mage", spec: "Frost", range: ["Ranged"], dmg: "Spellcaster", role: "Pure DPS",
-    traits: "Frost kite-CC-reset style (Frost Nova, slows, Blink, Ice Block, Ice Barrier); easiest AoE grinding/leveling; optional Water Elemental pet; no self-heal" },
+    traits: "Cloth; frost kite-CC-reset style (Frost Nova, slows, Blink, Ice Block, Ice Barrier); easiest AoE grinding/leveling; optional Water Elemental pet; no self-heal" },
   { id: "priest_discipline", icon: "spell_holy_wordfortitude", cls: "Priest", spec: "Discipline", range: ["Ranged"], dmg: "Spellcaster", role: "Healer",
     traits: "Holy-magic shield healer (Power Word: Shield); Power Infusion support; mana; cloth, squishy; low mobility" },
   { id: "priest_holy", icon: "spell_holy_guardianspirit", cls: "Priest", spec: "Holy", range: ["Ranged"], dmg: "Spellcaster", role: "Healer",
     traits: "Holy-magic raid healer (Prayer of Healing); direct heals; mana; cloth; low mobility" },
   { id: "priest_shadow", icon: "spell_shadow_shadowwordpain", cls: "Priest", spec: "Shadow", range: ["Ranged"], dmg: "Spellcaster", role: "Hybrid",
-    traits: "Shadow magic; DoTs (Shadow Word: Pain, Vampiric Touch) plus Mind Blast; strong self-heal and off-heal (Vampiric Embrace); group mana support; Psychic Scream fear; no pet; Shadowform keeps a humanoid look with visible gear; low mobility; can respec to two healer specs" },
+    traits: "Cloth; shadow magic; DoTs (Shadow Word: Pain, Vampiric Touch) plus Mind Blast; strong self-heal and off-heal (Vampiric Embrace); group mana support; Psychic Scream fear; no pet; Shadowform keeps a humanoid look with visible gear; low mobility; can respec to two healer specs" },
 ];
 
 export const FUNDAMENTALS = [
@@ -109,6 +111,7 @@ const qs = (list) => list.map((q) => ({ q }));
 
 // Asked once on the Playstyle step and applied to every content type (each step can override an answer).
 // "Any obvious exclusions?" became the click-to-exclude grid on the Look back step.
+// The last four aren't octy's: free-text only (no ratings), read by the trainer.
 export const PLAYSTYLE = qs([
   "Do you want your character to be dot/hot focused or direct damage/healing focused?",
   "How do you feel about Shapeshifting during battle?",
@@ -118,6 +121,10 @@ export const PLAYSTYLE = qs([
   "Is mobility mandatory?",
   "Is having a finite resource a dealbreaker (mana)?",
   "Any general aesthetic preferences? Sound design?",
+  "Armor type and look: cloth, leather, mail or plate?",
+  "How complex a rotation do you want?",
+  "How often will you respec (respec gold adds up)?",
+  "How well does it need to solo in the open world?",
 ]);
 
 const PVP_Q = [
@@ -135,6 +142,7 @@ const RAID_ITEMS = [
   { q: "Do you want to be able to off-heal or re-spec healer?" },
   { q: "If Healers are in your list: Tank healing or Raid healing?", when: "Healer" },
   { q: "If Tanks are in your list: is it a deal breaker if you have to manage a finite resource (mana)?", when: "Tank" },
+  { q: "How much does it matter that raids want your spec?" }, // not octy's: free text for the trainer
   { q: "Any other considerations? Novelty?" },
 ];
 

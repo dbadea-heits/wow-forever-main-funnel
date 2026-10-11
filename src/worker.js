@@ -5,7 +5,7 @@ import { buildRequest } from "./prompt.js";
 
 const UPSTREAM = "https://api.typesafe.ai/v1/systemone";
 const SITEVERIFY = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
-const MAX_BODY_BYTES = 64_000; // ≤ 15 questions × 500 chars of text, worst-case JSON escaping, presets, spec ids, token
+const MAX_BODY_BYTES = 100_000; // ≤ 19 questions × (500 chars of text at worst-case JSON escaping, presets, spared spec ids), spec ids, token
 const MAX_ANSWER_CHARS = 500;
 const MAX_TOKEN_CHARS = 2048;
 const UPSTREAM_TIMEOUT_MS = 60_000;
@@ -20,9 +20,9 @@ const SPEC = Object.fromEntries(SPECS.map((s) => [s.id, s]));
 const json = (status, body) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 
-// Request body: {contentType: id | "playstyle", answers: [{q, chosen: string[], text, dealbreaker}], specIds: string[], token}.
+// Request body: {contentType: id | "playstyle", answers: [{q, chosen: string[], text, dealbreaker, spare: specId[]}], specIds: string[], token}.
 // `q` must be one of the content type's questions or a Playstyle question; `chosen` must be its preset answers.
-// Returns {contentType, answers: {q: {chosen, text, dealbreaker}}, specs, token} or an error string.
+// Returns {contentType, answers: {q: {chosen, text, dealbreaker, spare}}, specs, token} or an error string.
 function parseJudgeRequest(raw) {
   let body;
   try {
@@ -40,11 +40,13 @@ function parseJudgeRequest(raw) {
     if (!allowed.has(a?.q) || Object.hasOwn(answers, a.q)) return "answers must be unique questions of this content type or Playstyle";
     if (typeof a.text !== "string" || a.text.length > MAX_ANSWER_CHARS) return `answer text must be a string of at most ${MAX_ANSWER_CHARS} chars`;
     if (typeof a.dealbreaker !== "boolean") return "dealbreaker must be a boolean";
+    if (!Array.isArray(a.spare) || new Set(a.spare).size !== a.spare.length || !a.spare.every((id) => SPEC[id]))
+      return "spare must be a list of unique known spec ids";
     const options = TEXTURE_OPTIONS[a.q] ?? {};
     if (!Array.isArray(a.chosen) || new Set(a.chosen).size !== a.chosen.length || !a.chosen.every((o) => typeof o === "string" && Object.hasOwn(options, o)))
       return "chosen must be unique preset answers of their question";
     if (a.chosen.length > 1 && !MULTI_CHOICE.has(a.q)) return "only one preset answer allowed for this question";
-    if (a.chosen.length || a.text.trim()) answers[a.q] = { chosen: a.chosen, text: a.text.trim(), dealbreaker: a.dealbreaker };
+    if (a.chosen.length || a.text.trim()) answers[a.q] = { chosen: a.chosen, text: a.text.trim(), dealbreaker: a.dealbreaker, spare: a.spare };
   }
   if (!Object.values(answers).some((a) => a.text)) return "the trainer is only needed for written notes";
   if (!Array.isArray(specIds) || specIds.length === 0 || new Set(specIds).size !== specIds.length || !specIds.every((id) => SPEC[id]))
@@ -111,7 +113,7 @@ async function judge(request, env) {
   if (!res.ok) {
     await budget.refund();
     console.error("typesafe", res.status, await res.text());
-    return json(502, { error: `The trainer is unavailable (${res.status}) — try again shortly.` });
+    return json(502, { error: "The trainer is unavailable — try again shortly." });
   }
   const { answers } = await res.json();
   return json(200, { pExcl: Object.fromEntries(Object.entries(answers).map(([id, a]) => [id, a.noul])) });

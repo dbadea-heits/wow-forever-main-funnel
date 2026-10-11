@@ -8,11 +8,20 @@ const REQUEST_TIMEOUT_MS = 75_000; // longer than the Worker's 60 s upstream wai
 let sitekey; // Promise<string>; cleared on failure so the next ask retries setup
 let active; // the human check in progress: {cancel}
 
+// Errors meant for the player; technical detail goes to the console.
+const UNAVAILABLE = "The trainer isn't available right now — try again later. Your preset answers still count through octy's ratings.";
+const failure = (detail) => {
+  console.warn("trainer:", detail);
+  return new Error(UNAVAILABLE);
+};
+
 function loadTurnstile() {
   sitekey ??= (async () => {
-    const res = await fetch("/api/config");
+    const res = await fetch("/api/config").catch((e) => {
+      throw failure(`config request failed: ${e.message}`);
+    });
     const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(body.error ?? `config request failed (${res.status})`);
+    if (!res.ok) throw failure(body.error ?? `config request failed (${res.status})`);
     await new Promise((resolve, reject) => {
       const script = document.createElement("script");
       script.src = TURNSTILE_SRC;
@@ -83,7 +92,7 @@ async function humanToken(onPhase) {
   });
 }
 
-// answers: {question: {chosen, text, dealbreaker}}, the content type's effective answers.
+// answers: {question: {chosen, text, dealbreaker, spare}}, the content type's effective answers.
 // onPhase(phase) reports progress: "human" (visitor must complete the check), "checking", "trainer".
 // Returns {specId: P(excluded)}.
 export async function judge(contentType, answers, specIds, onPhase) {
@@ -99,9 +108,12 @@ export async function judge(contentType, answers, specIds, onPhase) {
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
   } catch (e) {
-    throw new Error(e.name === "TimeoutError" ? "The trainer took too long to answer." : `Could not reach the trainer: ${e.message}`);
+    if (e.name === "TimeoutError") throw new Error("The trainer took too long to answer — try again.");
+    console.warn("trainer:", e.message);
+    throw new Error("Couldn't reach the trainer — check your connection and try again.");
   }
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.error ?? `Request failed (${res.status})`);
+  // The Worker's rate-limit, budget, human-check and upstream errors are written for players; the rest are bugs.
+  if (!res.ok) throw [403, 429, 502, 503].includes(res.status) && body.error ? new Error(body.error) : failure(body.error ?? `request failed (${res.status})`);
   return body.pExcl;
 }

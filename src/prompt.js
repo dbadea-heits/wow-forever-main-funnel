@@ -1,17 +1,18 @@
 // Builds the TypeSafe System One request. Server-side only, so the endpoint can't be used as a general Jev proxy.
-import { answerRatings } from "../public/funnel.js";
+import { answerRatings, drops } from "../public/funnel.js";
 
 const RATING_TEXT = { Y: "narrow match", X: "recommended to exclude" };
 
-// answers: {question: {chosen, text, dealbreaker}}, at least one with free text.
+// answers: {question: {chosen, text, dealbreaker, spare}}, at least one with free text.
 export function buildRequest(contentType, answers, specs) {
   const entries = Object.entries(answers);
-  // octy's ratings only matter for dealbreakers: a preference never rules a spec out on its own.
+  // octy's ratings only matter for dealbreakers: a preference never rules a spec out on its own, and neither does a
+  // dealbreaker for the specs the player spared from it.
   const rated = entries
     .filter(([, a]) => a.dealbreaker && a.chosen.length)
-    .map(([q, a]) => ({ q, options: a.chosen.join(" / "), ratings: answerRatings(q, a, answers) }));
+    .map(([q, a]) => ({ q, a, options: a.chosen.join(" / "), ratings: answerRatings(q, a, answers) }));
   const ratingNotes = (s) =>
-    rated.flatMap(({ q, options, ratings }) => (RATING_TEXT[ratings[s.id]] ? [`${q} → ${options}: ${RATING_TEXT[ratings[s.id]]}`] : []));
+    rated.flatMap(({ q, a, options, ratings }) => (drops(a, s.id) && RATING_TEXT[ratings[s.id]] ? [`${q} → ${options}: ${RATING_TEXT[ratings[s.id]]}`] : []));
 
   return {
     state: {

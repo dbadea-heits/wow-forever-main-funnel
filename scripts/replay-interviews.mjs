@@ -6,7 +6,7 @@
 import { SPECS, PLAYSTYLE, CONTENT_TYPES, DEFAULT_WEIGHTS } from "../public/data.js";
 import {
   EXCLUDE_THRESHOLD, effectiveAnswers, isMulti, optionsOf, judgeAnswers, trainerKey, stepTrainerAnswers, stepVerdict, questionsToAsk,
-  scoreSpecs, sameScore, isScored,
+  scoreSpecs, sameScore, showPoints, isScored,
 } from "../public/funnel.js";
 import { buildRequest } from "../src/prompt.js";
 import { INTERVIEWS } from "./interviews.mjs";
@@ -168,7 +168,7 @@ for (const r of runs) {
   p("|---|---|---|---|---|");
   r.rows.filter((row) => row.points > 0).slice(0, 8).forEach((row, i) => {
     const tag = r.iv.video.main.includes(row.spec.id) ? "main" : expected.has(row.spec.id) ? "alt" : "";
-    p(`| ${i + 1} | ${name(row.spec.id)} | ${row.points} | ${pct(row.fit)} | ${tag} |`);
+    p(`| ${i + 1} | ${name(row.spec.id)} | ${showPoints(row.points)} | ${pct(row.fit)} | ${tag} |`);
   });
   const lost = [...expected].filter((id) => !r.rows.slice(0, 8).some((row) => row.spec.id === id && row.points > 0));
   if (lost.length) p(`\nVideo picks outside the app's top 8: ${names(lost)}.`);

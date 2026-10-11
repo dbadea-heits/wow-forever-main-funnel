@@ -60,7 +60,7 @@ await pool(questions, async ({ q, options }) => {
 const ctFor = (q) => CONTENT_TYPES.find((c) => c.items.some((it) => it.q === q)) ?? CONTENT_TYPES[0];
 const chips = questions.flatMap(({ q, options }) => options.map(([option]) => ({ q, option })));
 await pool(chips, async ({ q, option }) => {
-  const body = buildRequest(ctFor(q), { [q]: { chosen: [option], text: "", dealbreaker: true } }, SPECS);
+  const body = buildRequest(ctFor(q), { [q]: { chosen: [option], text: "", dealbreaker: true, spare: [] } }, SPECS);
   const answers = await jev(body);
   for (const [specId, a] of Object.entries(answers)) {
     const c = byKey.get(cellKey(q, option, specId));

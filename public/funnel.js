@@ -1,10 +1,12 @@
 // Funnel rules, independent of the UI: which questions to ask, what octy's ratings make of the answers, and scoring.
-// An answer is {chosen: string[], text: string, dealbreaker: boolean}; answer sets are {question: answer}.
+// An answer is {chosen: string[], text: string, dealbreaker: boolean, spare: specId[]}; answer sets are {question: answer}.
+// A dealbreaker drops the specs octy rates ✗ for it, except the ones in `spare`.
 import { TEXTURE_OPTIONS, MULTI_CHOICE, ratingsOf } from "./ratings.js";
 
 export const EXCLUDE_THRESHOLD = 0.5; // the trainer's P(excluded) at which a spec is turned away
 
-export const emptyAnswer = () => ({ chosen: [], text: "", dealbreaker: false });
+export const emptyAnswer = () => ({ chosen: [], text: "", dealbreaker: false, spare: [] });
+export const drops = (a, specId) => a.dealbreaker && !a.spare.includes(specId);
 export const isAnswered = (a) => !!a && (a.chosen.length > 0 || a.text.trim() !== "");
 export const isMulti = (q) => MULTI_CHOICE.has(q);
 export const optionsOf = (q) => Object.keys(TEXTURE_OPTIONS[q] ?? {});
@@ -29,8 +31,8 @@ export function answerRatings(q, answer, answers) {
 }
 
 const FIT = { G: 1, Y: 0.5, X: 0 };
-// Dealbreaker answers exclude the specs octy rates ✗. Every answered preset (dealbreaker or not) adds to the spec's
-// fit, the mean of G = 1, Y = ½, ✗ = 0 over the answers that rate it; null when none does.
+// Dealbreaker answers exclude the specs octy rates ✗ (bar the spared ones). Every answered preset (dealbreaker or not)
+// adds to the spec's fit, the mean of G = 1, Y = ½, ✗ = 0 over the answers that rate it; null when none does.
 export function localVerdict(answers, specs) {
   const excluded = new Set();
   const sum = {};
@@ -43,7 +45,7 @@ export function localVerdict(answers, specs) {
       if (!r) continue;
       sum[s.id] = (sum[s.id] ?? 0) + FIT[r];
       count[s.id] = (count[s.id] ?? 0) + 1;
-      if (a.dealbreaker && r === "X") excluded.add(s.id);
+      if (r === "X" && drops(a, s.id)) excluded.add(s.id);
     }
   }
   return { excluded, fit: Object.fromEntries(specs.map((s) => [s.id, count[s.id] ? sum[s.id] / count[s.id] : null])) };
@@ -52,7 +54,8 @@ export function localVerdict(answers, specs) {
 const hasText = (answers) => Object.values(answers).some((a) => a.text.trim());
 
 const sameAnswer = (a, b) =>
-  a.dealbreaker === b.dealbreaker && a.text.trim() === b.text.trim() && a.chosen.length === b.chosen.length && a.chosen.every((o) => b.chosen.includes(o));
+  a.dealbreaker === b.dealbreaker && a.text.trim() === b.text.trim() && a.chosen.length === b.chosen.length && a.chosen.every((o) => b.chosen.includes(o)) &&
+  a.spare.length === b.spare.length && a.spare.every((id) => b.spare.includes(id));
 
 // Identifies the inputs a trainer verdict was computed from; a verdict is current only while this is unchanged.
 export const trainerKey = (answers, specs) =>
@@ -135,31 +138,30 @@ export function questionsToAsk(items, pool, answers) {
 }
 
 // The unanswered preset question that best splits specs tied for main, octy's "look back" when no one leads.
-// Questions with an answer octy rates ✗ for some of the tied specs come first, since only a drop changes points;
-// the rest can still separate them by fit. sources: [{scope, items, answers}] in priority order (an equal split goes
-// to the earlier source, so Playstyle, which applies everywhere, comes first). skip: scope|question keys passed on.
+// sources: [{scope, items, answers}] in priority order (an equal split goes to the earlier source, so Playstyle,
+// which applies everywhere, comes first). skip: scope|question keys passed on.
 // Returns {scope, q} or null when no question left can tell the tied specs apart.
 export function nextQuestion(sources, tied, skip = new Set()) {
   let best = null;
-  const better = (a, b) => a.x > b.x || (a.x === b.x && a.s > b.s);
   for (const { scope, items, answers } of sources) {
     for (const it of questionsToAsk(items, tied, answers)) {
       if (!it.q || !optionsOf(it.q).length || isAnswered(answers[it.q]) || skip.has(`${scope}|${it.q}`)) continue;
-      const cand = { scope, q: it.q, x: splitScore(it.q, tied, answers, true), s: splitScore(it.q, tied, answers) };
-      if (cand.s > 0 && (!best || better(cand, best))) best = cand;
+      const s = splitScore(it.q, tied, answers);
+      if (s > 0 && (!best || s > best.s)) best = { scope, q: it.q, s };
     }
   }
   return best && { scope: best.scope, q: best.q };
 }
 
-// steps: [{id, weight, verdict | null}] (null = not evaluated or skipped). Points follow octy's method
-// (weight × survived); fit (weight-averaged) breaks ties.
+// steps: [{id, weight, verdict | null}] (null = not evaluated or skipped). A spec that survives a content type earns
+// its weight × fit there (octy's full weight when no answer rates the spec); fit is also reported weight-averaged.
 export function scoreSpecs(steps, specs) {
   return specs
     .map((s) => {
       const cells = steps.map(({ weight, verdict }) => {
         const ok = !!verdict && verdict.kept.has(s.id);
-        return { ok, fit: verdict?.fit[s.id] ?? null, p: verdict?.pExcl?.[s.id], pts: ok ? weight : 0 };
+        const fit = verdict?.fit[s.id] ?? null;
+        return { ok, fit, p: verdict?.pExcl?.[s.id], pts: ok ? weight * (fit ?? 1) : 0 };
       });
       const rated = steps.map((st, i) => ({ w: st.weight, f: cells[i].fit })).filter((x) => x.f !== null && x.w > 0);
       const w = rated.reduce((a, x) => a + x.w, 0);
@@ -173,8 +175,12 @@ export function scoreSpecs(steps, specs) {
     .sort((a, b) => b.points - a.points || (b.fit ?? -1) - (a.fit ?? -1));
 }
 
-// Rows tied with the top on points and fit (to the displayed percent).
-export const sameScore = (a, b) => a.points === b.points && Math.round((a.fit ?? 0) * 100) === Math.round((b.fit ?? 0) * 100);
+// Points as shown (one decimal).
+export const showPoints = (p) => String(Math.round(p * 10) / 10);
+
+// Rows tied with the top as displayed: same points and same fit percent.
+export const sameScore = (a, b) =>
+  showPoints(a.points) === showPoints(b.points) && Math.round((a.fit ?? 0) * 100) === Math.round((b.fit ?? 0) * 100);
 
 // Knockout over the tied specs using the player's "A or B?" picks ({"a|b": winner}, ids sorted). Returns the
 // champion so far and the next undecided pair, or null when the knockout is complete.
