@@ -112,11 +112,12 @@ function distinguishes(q, pool, answers) {
 }
 
 // How evenly the question's sharpest answer splits the pool: 0.5 = half the specs rated against it, 0 = none.
-function splitScore(q, pool, answers) {
+// A "narrow match" counts as half against unless `xOnly`, which counts only the ✗ ratings an answer can drop.
+function splitScore(q, pool, answers, xOnly = false) {
   if (!pool.length) return 0;
   return Math.max(0, ...optionsOf(q).map((o) => {
     const ratings = ratingsOf(q, o, answers);
-    const against = pool.reduce((n, s) => n + (ratings[s.id] === "X" ? 1 : ratings[s.id] === "Y" ? 0.5 : 0), 0);
+    const against = pool.reduce((n, s) => n + (ratings[s.id] === "X" ? 1 : ratings[s.id] === "Y" && !xOnly ? 0.5 : 0), 0);
     return Math.min(against, pool.length - against) / pool.length;
   }));
 }
@@ -131,6 +132,24 @@ export function questionsToAsk(items, pool, answers) {
   const score = (it) => (it.q && optionsOf(it.q).length ? splitScore(it.q, pool, answers) : -1);
   // Stable sort: free-text questions and hints (score -1) keep their order after the rated ones.
   return shown.map((it, i) => ({ it, i, s: score(it) })).sort((a, b) => b.s - a.s || a.i - b.i).map((x) => x.it);
+}
+
+// The unanswered preset question that best splits specs tied for main, octy's "look back" when no one leads.
+// Questions with an answer octy rates ✗ for some of the tied specs come first, since only a drop changes points;
+// the rest can still separate them by fit. sources: [{scope, items, answers}] in priority order (an equal split goes
+// to the earlier source, so Playstyle, which applies everywhere, comes first). skip: scope|question keys passed on.
+// Returns {scope, q} or null when no question left can tell the tied specs apart.
+export function nextQuestion(sources, tied, skip = new Set()) {
+  let best = null;
+  const better = (a, b) => a.x > b.x || (a.x === b.x && a.s > b.s);
+  for (const { scope, items, answers } of sources) {
+    for (const it of questionsToAsk(items, tied, answers)) {
+      if (!it.q || !optionsOf(it.q).length || isAnswered(answers[it.q]) || skip.has(`${scope}|${it.q}`)) continue;
+      const cand = { scope, q: it.q, x: splitScore(it.q, tied, answers, true), s: splitScore(it.q, tied, answers) };
+      if (cand.s > 0 && (!best || better(cand, best))) best = cand;
+    }
+  }
+  return best && { scope: best.scope, q: best.q };
 }
 
 // steps: [{id, weight, verdict | null}] (null = not evaluated or skipped). Points follow octy's method

@@ -4,7 +4,7 @@ import { saveLocal, loadLocal, clearLocal, encodeShare, decodeShare } from "./pe
 import { TEXTURE_OPTIONS, ratingsOf } from "./ratings.js";
 import {
   emptyAnswer, isAnswered, isMulti, optionsOf, effectiveAnswers, answerRatings, judgeAnswers, stepVerdict, stepTrainerAnswers,
-  isScored, trainerKey, questionsToAsk, scoreSpecs, sameScore, knockout,
+  isScored, trainerKey, questionsToAsk, nextQuestion, scoreSpecs, sameScore, knockout,
 } from "./funnel.js";
 
 const CT = Object.fromEntries(CONTENT_TYPES.map((c) => [c.id, c]));
@@ -23,11 +23,12 @@ const state = {
   //          trainer: {key, pExcl} | null, override: {specId: kept}}
   texture: {},
   tiebreak: {}, // "specA|specB" (sorted) -> the spec the player would rather play
+  keptPreference: new Set(), // "scope|question|options" the player chose to keep as a preference instead of dropping
 };
 
 // Per-page UI that isn't saved: trainer call progress and errors, the results tie-breaker panel.
 const ui = {};
-const uiOf = (stepId) => (ui[stepId] ??= { loading: false, phase: null, error: null, choosing: false });
+const uiOf = (stepId) => (ui[stepId] ??= { loading: false, phase: null, error: null, choosing: false, skippedQuestions: new Set() });
 
 // ---------- derived state ----------
 
@@ -53,6 +54,20 @@ const verdictOf = (ctId) => {
     specs: basePool(), trainer: t.trainer, override: t.override, favors: CT[ctId].favors,
   });
 };
+
+// Where a question is answered: "playstyle", "ct:<id>" (the content type's own questions) or "ct:<id>:override"
+// (a Playstyle answer changed for that content type). Gives questionField the specs in play there, the answers
+// derived ratings depend on, and where a drop applies.
+function fieldContext(scope) {
+  if (scope === "playstyle") return { scope, pool: basePool(), answers: state.playstyle, where: "for every content type" };
+  const ctId = scope.split(":")[1];
+  const t = textureOf(ctId);
+  const specs = basePool();
+  // Questions are judged against the specs still in play after the Playstyle answers.
+  const { sharesPlaystyle } = stepTrainerAnswers(state.playstyle, t.overrides, t.answers);
+  const kept = sharesPlaystyle ? playstyleVerdict().kept : judgeAnswers(effectiveAnswers(state.playstyle, t.overrides, {}), specs, null).kept;
+  return { scope, pool: specs.filter((s) => kept.has(s.id)), answers: answersFor(ctId), where: `for ${CT[ctId].label}` };
+}
 
 // pending: not opened yet · stale: written notes the trainer hasn't read · evaluated: everything decided.
 function statusOf(ctId) {
@@ -244,6 +259,7 @@ function snapshot() {
       }]),
     ),
     tiebreak: state.tiebreak,
+    keptPreference: [...state.keptPreference],
   };
 }
 
@@ -292,6 +308,7 @@ function restore(snap) {
     t.override = specMap(saved.override, (v) => typeof v === "boolean");
   }
   state.tiebreak = Object.fromEntries(Object.entries(obj(snap.tiebreak)).filter(([pair, w]) => pair.split("|").includes(w) && SPEC[w]));
+  state.keptPreference = new Set(list(snap.keptPreference).filter((k) => typeof k === "string" && k.length <= 1000));
   state.step = steps().some((s) => s.id === snap.step) ? snap.step : "intro";
 }
 
@@ -315,9 +332,10 @@ function specTile(s, { off = false, onClick, note } = {}) {
 
 const fitNote = (fit) => (fit === null || fit === undefined ? null : `fit ${pct(fit)}`);
 
-// One question with octy's preset answers (single or multi choice), a dealbreaker toggle and optional notes, or a
-// free-text box when the question has no presets. `container[q]` holds the answer; `ctx.answers` gives derived
-// ratings their context, `ctx.pool` the specs still in play.
+// One question with octy's preset answers (single or multi choice), octy's "drop these?" prompt and optional notes, or
+// a free-text box when the question has no presets. `container[q]` holds the answer; `ctx.answers` gives derived
+// ratings their context, `ctx.pool` the specs still in play, `ctx.scope` names where the answer lives (for
+// remembering "keep as a preference") and `ctx.where` where a drop applies.
 function questionField(container, q, ctx) {
   const a = container[q] ?? emptyAnswer();
   const commit = () => {
@@ -356,6 +374,7 @@ function questionField(container, q, ctx) {
       onclick: () => {
         if (isMulti(q)) a.chosen = on ? a.chosen.filter((o) => o !== opt) : [...a.chosen, opt];
         else a.chosen = on ? [] : [opt];
+        a.dealbreaker = false; // a new answer drops different specs, so ask again
         commit();
         render();
       },
@@ -364,19 +383,7 @@ function questionField(container, q, ctx) {
   return el("div", { class: "q" },
     el("span", {}, q, isMulti(q) ? el("small", { class: "multi" }, " · pick any") : null),
     el("div", { class: "chips" }, chips),
-    a.chosen.length && rated
-      ? el("label", { class: `dealbreaker${a.dealbreaker ? " on" : ""}` },
-          el("input", {
-            type: "checkbox",
-            checked: a.dealbreaker,
-            onchange: (e) => {
-              a.dealbreaker = e.target.checked;
-              commit();
-              render();
-            },
-          }),
-          "Dealbreaker — rule out specs octy rates ✗")
-      : null,
+    a.chosen.length && rated ? dropPrompt(a, q, ctx, commit) : null,
     a.text
       ? textarea("Add detail (optional)")
       : el("button", {
@@ -387,6 +394,38 @@ function questionField(container, q, ctx) {
             box.focus();
           },
         }, "+ add detail"),
+  );
+}
+
+// octy's move after an answer: name the specs it rules out and ask whether to drop them. Nothing is dropped
+// without a click; "keep" is remembered for that exact answer, so the prompt doesn't nag.
+function dropPrompt(a, q, ctx, commit) {
+  const ratings = answerRatings(q, a, ctx.answers);
+  const against = ctx.pool.filter((s) => ratings[s.id] === "X");
+  if (!against.length) return null;
+  const key = `${ctx.scope}|${q}|${[...a.chosen].sort().join("+")}`;
+  const SHOWN = 5;
+  const names = el("span", { title: against.map(specName).join(", ") },
+    against.slice(0, SHOWN).map(specName).join(", "), against.length > SHOWN ? ` +${against.length - SHOWN} more` : "");
+  const set = (drop) => {
+    a.dealbreaker = drop;
+    drop ? state.keptPreference.delete(key) : state.keptPreference.add(key);
+    commit();
+    render();
+  };
+  if (a.dealbreaker) {
+    return el("div", { class: "drop dropped" }, `Dropped ${ctx.where}: `, names, " ",
+      el("button", { class: "link", onclick: () => set(false) }, "undo"));
+  }
+  if (state.keptPreference.has(key)) {
+    return el("div", { class: "drop kept" }, "Kept as a preference — it only ranks specs. ",
+      el("button", { class: "link", onclick: () => set(true) }, `Drop ${against.length === 1 ? "it" : "them"} instead`));
+  }
+  return el("div", { class: "drop ask" },
+    el("span", {}, "octy would drop ", names, ` ${ctx.where}. Drop ${against.length === 1 ? "it" : "them"}?`),
+    el("span", { class: "drop-actions" },
+      el("button", { class: "mini primary", onclick: () => set(true) }, "Drop"),
+      el("button", { class: "mini", onclick: () => set(false) }, "Keep — just a preference")),
   );
 }
 
@@ -403,11 +442,11 @@ function octyTally(notes) {
   if (!notes.length) return null;
   const n = (r) => notes.filter((x) => x.r === r).length;
   const parts = [n("X") && `${n("X")} ✗`, n("Y") && `${n("Y")} ~`].filter(Boolean);
-  const title = notes.map((x) => `${x.r === "X" ? "✗ against" : "~ narrow"}${x.dealbreaker ? " (dealbreaker)" : ""}: ${x.text}`).join("\n");
+  const title = notes.map((x) => `${x.r === "X" ? "✗ against" : "~ narrow"}${x.dealbreaker ? " (dropped)" : ""}: ${x.text}`).join("\n");
   return el("span", { class: "octy-tally", title }, `octy ${parts.join(" ")}`);
 }
 
-const answerText = (a) => [a.chosen.join(" / "), a.text.trim() && `“${a.text.trim()}”`].filter(Boolean).join(" + ") + (a.dealbreaker ? " · dealbreaker" : "");
+const answerText = (a) => [a.chosen.join(" / "), a.text.trim() && `“${a.text.trim()}”`].filter(Boolean).join(" + ") + (a.dealbreaker ? " · drops octy's ✗ specs" : "");
 
 // Asks the trainer about `answers` for one page (stepId: "playstyle" or "ct:<id>"); `keep(trainer)` stores the verdict.
 async function askTrainer(stepId, contentType, answers, keep) {
@@ -469,7 +508,7 @@ const VIEWS = {
         el("li", {}, "Look back at earlier answers; later ones can clarify them."),
         el("li", {}, "In WoW Forever there is no wasted time: rejected picks become alts."),
       ),
-      el("p", { class: "muted" }, "Method from octy's video ", el("a", { href: VIDEO_URL, target: "_blank", rel: "noopener" }, "Find Your WoW Forever Main in 15 Minutes"), ". Your answers use octy's own ratings of every spec: preferences rank the specs, dealbreakers rule them out, and the class trainer reads anything you write in your own words. Specs left standing earn each content type's weight."),
+      el("p", { class: "muted" }, "Method from octy's video ", el("a", { href: VIDEO_URL, target: "_blank", rel: "noopener" }, "Find Your WoW Forever Main in 15 Minutes"), ". Your answers use octy's own ratings of every spec: they rank the specs, octy offers to drop the ones an answer goes against, and the class trainer reads anything you write in your own words. Specs left standing earn each content type's weight."),
     ),
     el("h2", {}, "Examples from the video"),
     el("div", { class: "examples" }, EXAMPLES.map((e) =>
@@ -593,7 +632,7 @@ const VIEWS = {
     const specs = basePool();
     const answers = effectiveAnswers(state.playstyle, {}, {});
     const verdict = playstyleVerdict();
-    const ctx = { pool: specs, answers: state.playstyle };
+    const ctx = fieldContext("playstyle");
     const answered = Object.keys(answers).length;
     const written = Object.values(answers).some((a) => a.text.trim());
     const ask = () => askTrainer("playstyle", "playstyle", answers, (trainer) => (state.playstyleTrainer = trainer));
@@ -602,7 +641,7 @@ const VIEWS = {
       header("Playstyle", "spell_holy_magicalsentry",
         el("p", { class: "muted" }, "Answered once, used for every content type — you can still change an answer for one content type on its page. Leave blank anything you don't mind.")),
       el("div", { class: "parchment" },
-        el("p", { class: "parchment-intro" }, "Answers are preferences: they rank specs using octy's ratings. Tick “Dealbreaker” only when you feel strongly — then specs octy rates ✗ are ruled out everywhere. Notes are read once by the trainer and apply to every content type."),
+        el("p", { class: "parchment-intro" }, "Answers are preferences: they rank specs using octy's ratings. When an answer goes against some specs, octy offers to drop them — say yes only when you feel strongly. Notes are read once by the trainer and apply to every content type."),
         questionsToAsk(PLAYSTYLE, specs, state.playstyle).map((it) => questionField(state.playstyle, it.q, ctx)),
       ),
       el("div", { class: "actions" },
@@ -626,7 +665,7 @@ const VIEWS = {
       const label = CT[p.id].label;
       if (t.skipped || !isScored(CT[p.id])) continue;
       const v = verdictOf(p.id);
-      if (!v.kept.size) flags.push(el("li", {}, `Nothing survives in ${label} — loosen a dealbreaker there or on Playstyle.`));
+      if (!v.kept.size) flags.push(el("li", {}, `Nothing survives in ${label} — undo a drop there or on Playstyle.`));
       if (v.trainerPending) flags.push(el("li", {}, `${label} has notes the trainer hasn't read yet.`));
       for (const [q, a] of Object.entries(t.overrides)) {
         const base = state.playstyle[q];
@@ -742,10 +781,41 @@ const VIEWS = {
       u.choosing = true;
       render();
     };
+    // octy's "look back": while specs tie for main, offer the unanswered question that splits them best, inline.
+    // It stays up after being answered (so its "drop these?" prompt can be used) until the player moves on.
+    const askable = ranked.filter((p) => (p.status === "evaluated" || p.status === "stale") && CT[p.id].items.length);
+    const tiedNow = top.length > 1 && !mainRow;
+    const scopeLive = (scope) => scope === "playstyle" || askable.some((p) => `ct:${p.id}` === scope);
+    if (u.current && !scopeLive(u.current.scope)) u.current = null;
+    if (!u.current && tiedNow) {
+      u.current = nextQuestion([
+        { scope: "playstyle", items: PLAYSTYLE, answers: state.playstyle },
+        ...askable.map((p) => ({ scope: `ct:${p.id}`, items: CT[p.id].items, answers: answersFor(p.id) })),
+      ], top.map((r) => r.spec), u.skippedQuestions);
+    }
+    const cur = u.current;
+    const curContainer = cur && (cur.scope === "playstyle" ? state.playstyle : textureOf(cur.scope.slice(3)).answers);
+    const curAnswered = cur && isAnswered(curContainer[cur.q]);
+    const moveOn = () => {
+      if (!curAnswered) u.skippedQuestions.add(`${cur.scope}|${cur.q}`);
+      u.current = null;
+      render();
+    };
+    const nextPanel = cur
+      ? el("div", { class: "parchment next-question" },
+          el("h2", {}, "One more question"),
+          el("p", { class: "parchment-intro" },
+            tiedNow ? `Your answers can't separate these ${top.length} specs yet. This question splits them best ` : "That settled your main — you can still drop specs for this answer ",
+            cur.scope === "playstyle" ? "(Playstyle — applies to every content type):" : `(${CT[cur.scope.slice(3)].label}):`),
+          questionField(curContainer, cur.q, fieldContext(cur.scope)),
+          el("button", { class: curAnswered ? "mini primary" : "add-detail", onclick: moveOn },
+            !curAnswered ? "Skip this question" : tiedNow ? "Next question" : "Done"),
+        )
+      : null;
     let tieNote = null;
     if (top.length > MAX_TIE_PICKER) {
-      tieNote = el("div", { class: "panel tiebreak" },
-        el("p", {}, `${top.length} specs tie for main — nothing in your answers separates them yet. Answer more questions, tick a dealbreaker, or write a note for the trainer to narrow it down.`));
+      tieNote = cur ? null : el("div", { class: "panel tiebreak" },
+        el("p", {}, `${top.length} specs tie for main and no question left tells them apart. Drop specs you're not keen on from an earlier answer, or write a note for the trainer.`));
     } else if (canPick && !mainRow) {
       tieNote = el("div", { class: "panel tiebreak" },
         u.choosing && ko.next
@@ -771,6 +841,7 @@ const VIEWS = {
       playstyleVerdict().trainerPending
         ? el("div", { class: "warn" }, "Your Playstyle notes aren't read yet — octy's ratings only: ", el("span", { class: "step-links" }, el("button", { class: "mini", onclick: () => go("playstyle") }, "Playstyle")))
         : null,
+      tiedNow ? nextPanel : null,
       el("div", { class: "podium" }, [mainRow, ...tied, ...alts].filter(Boolean).map((r) =>
         el("div", { class: `loot ${tier(r)}`, dataset: { spec: r.spec.id } },
           icon(r.spec.icon, "xl"),
@@ -783,6 +854,7 @@ const VIEWS = {
         ),
       )),
       tied.length < top.length && !mainRow ? el("p", { class: "muted small" }, `+${top.length - tied.length} more tied — see the table.`) : null,
+      tiedNow ? null : nextPanel,
       tieNote,
       el("div", { class: "panel table-wrap" },
         el("table", { class: "results" },
@@ -830,14 +902,12 @@ function renderTexture(ctId) {
   const answers = answersFor(ctId);
   const verdict = verdictOf(ctId);
   // Only this step's own notes (or Playstyle notes it changed) need a trainer call here; Playstyle notes are read once.
-  const { sharesPlaystyle, answers: trainerAnswers } = stepTrainerAnswers(state.playstyle, t.overrides, t.answers);
+  const { answers: trainerAnswers } = stepTrainerAnswers(state.playstyle, t.overrides, t.answers);
   const written = Object.values(trainerAnswers).some((a) => a.text.trim());
   const loading = uiOf(stepId).loading;
 
-  // Questions are judged against the specs still in play after the Playstyle answers.
-  const playstyleKept = sharesPlaystyle ? playstyleVerdict().kept : judgeAnswers(effectiveAnswers(state.playstyle, t.overrides, {}), specs, null).kept;
-  const inPlay = specs.filter((s) => playstyleKept.has(s.id));
-  const ctx = { pool: inPlay, answers };
+  const ctx = fieldContext(stepId);
+  const overrideCtx = fieldContext(`${stepId}:override`);
 
   const ask = () => askTrainer(stepId, ctId, trainerAnswers, (trainer) => {
     t.trainer = trainer;
@@ -852,7 +922,7 @@ function renderTexture(ctId) {
     .map((p) => ({ label: CT[p.id].label, answers: Object.entries(textureOf(p.id).answers).filter(([q, a]) => ownQs.has(q) && isAnswered(a)) }))
     .filter((x) => x.answers.some(([q, a]) => JSON.stringify(t.answers[q]) !== JSON.stringify(a)));
 
-  const ownQuestions = questionsToAsk(ct.items, inPlay, answers);
+  const ownQuestions = questionsToAsk(ct.items, ctx.pool, answers);
   const overridden = PLAYSTYLE.filter((it) => it.q in t.overrides);
   const playstyleList = PLAYSTYLE.map((it) => {
     if (it.q in t.overrides) return null;
@@ -868,7 +938,7 @@ function renderTexture(ctId) {
       }, `Change for ${ct.label}`));
   });
   const intro = ownQuestions.length
-    ? `Questions for ${ct.label}, the ones that narrow your pool most first. Answers are preferences unless you tick “Dealbreaker”; anything you write is read by the trainer.`
+    ? `Questions for ${ct.label}, the ones that narrow your pool most first. Answers rank specs; octy offers to drop the ones an answer goes against. Anything you write is read by the trainer.`
     : ct.favors
       ? `octy's tip decides this one: only ${ct.favors.join(", ")} specs score here, on top of your Playstyle answers. Click a spec below to change that.`
       : `No ${ct.label}-specific questions left for your pool — your Playstyle answers decide this one.`;
@@ -894,7 +964,7 @@ function renderTexture(ctId) {
           el("div", { class: "override-head" },
             el("span", { class: "muted small" }, `Playstyle answer changed for ${ct.label}`),
             el("button", { class: "mini", onclick: () => { delete t.overrides[it.q]; render(); } }, "Use my Playstyle answer")),
-          questionField(t.overrides, it.q, ctx))),
+          questionField(t.overrides, it.q, overrideCtx))),
     ),
     el("details", { class: "panel playstyle-here" },
       el("summary", {}, `Your Playstyle answers (applied here)${overridden.length ? ` · ${overridden.length} changed` : ""}`),

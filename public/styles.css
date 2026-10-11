@@ -370,8 +370,12 @@ textarea:focus, input:focus { outline: 1px solid var(--gold-soft); }
 }
 .add-detail:hover:not(:disabled) { color: #3b2610; filter: none; }
 .q .multi { font-family: "Open Sans", system-ui, sans-serif; font-size: .75rem; color: #7a5a2c; text-transform: none; }
-.dealbreaker { display: flex; width: fit-content; align-items: center; gap: .4rem; margin: 0 0 .35rem; font-size: .8rem; color: #5c4123; cursor: pointer; }
-.dealbreaker.on { color: #8a1c0c; font-weight: 700; }
+.drop { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .6rem; margin: 0 0 .35rem; font-size: .82rem; color: #5c4123; }
+.q .drop span { font-family: inherit; font-size: inherit; }
+.drop.ask { padding: .45rem .6rem; border: 1px dashed #a98450; border-radius: 6px; background: rgba(169, 132, 80, .12); }
+.drop.dropped { color: #8a1c0c; font-weight: 600; }
+.drop-actions { display: inline-flex; gap: .4rem; }
+.drop .link { padding: 0; font: inherit; font-weight: 600; color: #7a4e17; background: none; border: 0; box-shadow: none; text-shadow: none; text-decoration: underline; cursor: pointer; }
 .override { border-left: 3px solid #a98450; padding-left: .8rem; }
 .override-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: .3rem; }
 .playstyle-here summary { cursor: pointer; color: var(--gold-soft); font-family: var(--heading); }
@@ -473,6 +477,8 @@ textarea:focus, input:focus { outline: 1px solid var(--gold-soft); }
 .review dt { color: var(--muted); }
 .review dd { margin: 0; }
 .tiebreak { text-align: center; }
+.next-question h2 { margin: 0; color: #3b2610; }
+.next-question > button { justify-self: start; }
 .tiebreak-pair { display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap; margin-bottom: .6rem; }
 .start-over { display: flex; justify-content: flex-end; margin-top: 1.5rem; }
 .copy-from { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .8rem; }
